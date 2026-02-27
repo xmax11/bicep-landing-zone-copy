@@ -14,6 +14,8 @@ param environment string
 param hubVnetAddressSpace string = '10.100.0.0/16'
 param spokeVnetAddressSpace string = '10.200.0.0/16'
 param firewallPrivateIp string = '10.100.0.4'
+@description('Private IP of NVA in spoke AppSubnet for data/inter-subnet routing (reserved for future use)')
+param nvaPrivateIp string = '10.200.1.4'
 
 // Hub Subnet Configuration
 var hubSubnets = [
