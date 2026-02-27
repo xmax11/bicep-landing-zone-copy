@@ -1,0 +1,119 @@
+## Ignore OS files and editors
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+desktop.ini
+
+# Ignore typical Windows user folders (don't accidentally add whole home)
+AppData/
+Documents/
+Downloads/*
+Pictures/
+Music/
+Videos/
+
+# Sensitive or runtime files
+*.key
+*.pem
+*.pfx
+*.secret
+
+# Logs and reports
+*.log
+failed_ops_preview.txt
+failed_ops.json
+deleted_kv.json
+
+# Docs you asked to exclude
+TROUBLESHOOTING.md
+VS_CODE_GUIDE.md
+
+# Local tools we don't want in repo
+tools/validate_yaml.py
+# Git ignore patterns for Bicep Landing Zone
+
+# Bicep Compiled Files
+*.json.bicep
+*.bicepparam
+
+# Deployment outputs
+deployment-output.json
+deployment-state.json
+resource-state.json
+
+# Credentials and Secrets
+.env
+.env.local
+*.key
+*.pem
+secrets.json
+credentials.json
+azure-credentials.json
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-workspace
+*.vs/
+
+# Local Development
+node_modules/
+.npmrc
+.yarnrc
+local/
+temp/
+tmp/
+
+# Build Output
+dist/
+build/
+output/
+*.zip
+
+# Logs
+*.log
+npm-debug.log
+yarn-error.log
+debug.log
+
+# OS Files
+Thumbs.db
+.DS_Store
+*.tmp
+
+# Azure-specific
+*.bicep.bak
+bicep-params.json.bak
+*.parameters.json.bak
+
+# CI/CD
+.gh-token
+gh-token.txt
+
+# Terraform (if migrating)
+terraform/
+.terraform/
+*.tfstate*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+venv/
+env/
+
+# Node/NPM
+package-lock.json
+node_modules/
+
+# PowerShell
+.vscode/
+.ps1_history
+*.psd1

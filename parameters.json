@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "environment": {
+      "value": "production"
+    },
+    "projectName": {
+      "value": "sinet-lz3"
+    },
+    "hubVnetAddressSpace": {
+      "value": "10.100.0.0/16"
+    },
+    "spokeVnetAddressSpace": {
+      "value": "10.200.0.0/16"
+    },
+    "firewallPrivateIp": {
+      "value": "10.100.0.4"
+    },
+    "deployLogAnalytics": {
+      "value": true
+    },
+    "deployPrivateDns": {
+      "value": true
+    },
+    "deployAzurePolicies": {
+      "value": true
+    },
+    "alertEmailAddress": {
+      "value": ""
+    },
+    "keyVaultAccessObjectId": {
+      "value": ""
+    }
+  }
+}
