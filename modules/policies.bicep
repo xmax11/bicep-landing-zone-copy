@@ -89,7 +89,7 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
   }
 }
 
-// Policy: Require resource tags - FINAL WORKING VERSION using json()
+// Policy: Require resource tags – CORRECTED with boolean exists
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags'
   properties: {
@@ -110,12 +110,12 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
         defaultValue: tagName
       }
     }
-    // ✅ Use json() to embed a raw policy rule
+    // Use json() to embed raw JSON; exists is boolean false
     policyRule: json('''
       {
         "if": {
           "field": "[concat(''tags['', parameters(''tagName''), '']'')]",
-          "exists": "false"
+          "exists": false
         },
         "then": {
           "effect": "Deny"
