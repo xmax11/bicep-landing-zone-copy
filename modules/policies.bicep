@@ -99,15 +99,14 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
     mode: 'All'
     metadata: { category: 'Tags' }
     parameters: {
-      defTagName: { // Definition level parameter name
+      defTagName: {
         type: 'String'
-        metadata: { description: 'Name of the tag', displayName: 'Tag Name' }
         defaultValue: tagName
       }
     }
     policyRule: {
       if: {
-        // Correct single quote escaping for Bicep
+        // Essential: Single quotes with backslash escaping for Bicep strings
         field: 'tags[parameters(\'defTagName\')]'
         exists: false
       }
@@ -126,7 +125,7 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
     description: 'Baseline policies for landing zone'
     policyType: 'Custom'
     parameters: {
-      setTagName: { // Initiative level parameter name
+      setTagName: {
         type: 'String'
         defaultValue: tagName
       }
@@ -144,7 +143,8 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
       {
         policyDefinitionId: tagPolicy.id
         parameters: {
-          defTagName: { // Mapping the Initiative parameter to the Definition parameter
+          // This maps the 'setTagName' from the Initiative to the 'defTagName' in the Policy
+          defTagName: {
             value: '[parameters(\'setTagName\')]'
           }
         }
@@ -155,6 +155,7 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
 
 // 6. Policy Assignment (at subscription scope)
 resource baselineAssignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
+  // Policy assignment names have a strict 64-character limit
   name: take('${projectName}-baseline-asgn', 24)
   location: location
   properties: {
@@ -162,7 +163,7 @@ resource baselineAssignment 'Microsoft.Authorization/policyAssignments@2021-06-0
     description: 'Assignment of baseline policy initiative'
     policyDefinitionId: baselineInitiative.id
     parameters: {
-      setTagName: { // Passing the value to the Initiative parameter
+      setTagName: {
         value: tagName
       }
     }

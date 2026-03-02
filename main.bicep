@@ -133,12 +133,16 @@ module privateEndpoints 'modules/private-endpoints.bicep' = {
 }
 
 // Deploy Azure Policies
+// Deploy Azure Policies
 module policies 'modules/policies.bicep' = if(deployAzurePolicies) {
   name: 'policiesDeployment'
+  // Since main is subscription scope, the module defaults to subscription, 
+  // but being explicit helps prevent deployment mapping errors.
+  scope: subscription() 
   params: {
     location: location
     projectName: projectName
-    tagName: 'environment'
+    tagName: 'environment' // This matches the defaultValue in your policy
   }
 }
 
