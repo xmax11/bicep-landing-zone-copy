@@ -89,7 +89,7 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
   }
 }
 
-// Policy: Require resource tags
+// Policy: Require resource tags - FIXED USING MULTI-LINE STRING
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags'
   properties: {
@@ -112,8 +112,8 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
     }
     policyRule: {
       if: {
-        // Correctly escaped field expression using the tagName parameter
-        field: '[[concat(\'tags[\', parameters(\'tagName\'), \']\')]'
+        // ✅ Multi-line string - Bicep will pass this raw to ARM
+        field: '''[concat(''tags['', parameters(''tagName''), '']'')]'''
         exists: 'false'
       }
       then: {
