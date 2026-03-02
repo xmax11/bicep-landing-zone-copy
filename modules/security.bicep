@@ -112,6 +112,10 @@ resource storagePrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetw
   parent: storagePrivateDns
   name: '${projectName}-storage-hub-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -122,6 +126,10 @@ resource storagePrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNe
   parent: storagePrivateDns
   name: '${projectName}-storage-spoke-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -133,6 +141,10 @@ resource keyVaultPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNet
   parent: keyVaultPrivateDns
   name: '${projectName}-keyvault-hub-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -143,6 +155,10 @@ resource keyVaultPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualN
   parent: keyVaultPrivateDns
   name: '${projectName}-keyvault-spoke-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -154,6 +170,10 @@ resource sqlPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkL
   parent: sqlPrivateDns
   name: '${projectName}-sql-hub-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -164,6 +184,10 @@ resource sqlPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetwor
   parent: sqlPrivateDns
   name: '${projectName}-sql-spoke-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -175,6 +199,10 @@ resource appServicePrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualN
   parent: appServicePrivateDns
   name: '${projectName}-appservice-hub-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -185,6 +213,10 @@ resource appServicePrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtua
   parent: appServicePrivateDns
   name: '${projectName}-appservice-spoke-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -196,6 +228,10 @@ resource cosmosDbPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNet
   parent: cosmosDbPrivateDns
   name: '${projectName}-cosmosdb-hub-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -206,6 +242,10 @@ resource cosmosDbPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualN
   parent: cosmosDbPrivateDns
   name: '${projectName}-cosmosdb-spoke-link'
   location: 'global'
+  tags: {
+    environment: environment
+    project: projectName
+  }
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }

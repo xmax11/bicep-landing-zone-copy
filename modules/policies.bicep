@@ -112,7 +112,7 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
     }
     policyRule: {
       if: {
-        // Correctly escaped field expression
+        // Correctly escaped field expression using the tagName parameter
         field: '[[concat(\'tags[\', parameters(\'tagName\'), \']\')]'
         exists: 'false'
       }
