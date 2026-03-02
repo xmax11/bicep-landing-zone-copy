@@ -44,8 +44,8 @@ param keyVaultAccessObjectId string
 var uniqueSuffix = take(uniqueString(subscription().id, location), 8)
 var resourceGroupName = '${projectName}-rg-${location}'
 var logAnalyticsName = '${projectName}law${location}${uniqueSuffix}'
-var keyVaultName = '${projectName}kv${uniqueSuffix}'
-var storageAccountName = replace('${projectName}st${uniqueSuffix}', '-', '')
+var keyVaultName = take('${projectName}kv${uniqueSuffix}', 24)
+var storageAccountName = take(replace('${projectName}st${uniqueSuffix}', '-', ''), 24)
 
 // Create Resource Group
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
