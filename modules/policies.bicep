@@ -130,7 +130,7 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
     displayName: '${projectName} Baseline Policy Initiative'
     description: 'Baseline policies for landing zone'
     policyType: 'Custom'
-    // 1. Define the parameter here so the Initiative knows it exists
+    // This tells the Initiative it has a parameter called 'tagName'
     parameters: {
       tagName: {
         type: 'String'
@@ -148,8 +148,8 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
         policyDefinitionId: kvEncryptionPolicy.id
       }
       {
+        // This is where the error was. We must MAP the Initiative parameter to the Policy parameter.
         policyDefinitionId: tagPolicy.id
-        // 2. Map the Initiative parameter to the specific Policy Definition parameter
         parameters: {
           tagName: {
             value: '[parameters(\'tagName\')]'
@@ -160,14 +160,20 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
   }
 }
 
-// 6. Policy Assignment
+// 6. Policy Assignment (at subscription scope)
 resource baselineAssignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
-  name: take('${projectName}-baseline-assignment', 64) // Assignment names have a 64 char limit
+  name: take('${projectName}-asgn', 24) // Kept short to avoid character limits
   location: location
   properties: {
     displayName: '${projectName} Baseline Policy Assignment'
     description: 'Assignment of baseline policy initiative'
     policyDefinitionId: baselineInitiative.id
+    // Providing the parameter value at the assignment level
+    parameters: {
+      tagName: {
+        value: tagName
+      }
+    }
   }
   identity: {
     type: 'SystemAssigned'
