@@ -15,7 +15,7 @@ resource tlsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   properties: {
     displayName: 'Enforce TLS 1.2 for Storage Accounts'
     policyType: 'Custom'
-    mode: 'All'
+    mode: 'Indexed' // Use Indexed for resource-specific properties
     policyRule: {
       if: {
         allOf: [
@@ -28,18 +28,19 @@ resource tlsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   }
 }
 
-// 2. Policy: Enforce HTTPS
+// 2. Policy: Enforce HTTPS (FIXED ALIAS)
 resource httpsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-enforce-https'
   properties: {
     displayName: 'Enforce HTTPS only for Storage Accounts'
     policyType: 'Custom'
-    mode: 'All'
+    mode: 'Indexed'
     policyRule: {
       if: {
         allOf: [
           { field: 'type', equals: 'Microsoft.Storage/storageAccounts' }
-          { field: 'Microsoft.Storage/supportsHttpsTrafficOnly', notEquals: 'true' }
+          // Fixed the alias path here
+          { field: 'Microsoft.Storage/storageAccounts/supportsHttpsTrafficOnly', notEquals: 'true' }
         ]
       }
       then: { effect: 'Deny' }
@@ -53,7 +54,7 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
   properties: {
     displayName: 'Audit Key Vault Encryption'
     policyType: 'Custom'
-    mode: 'All'
+    mode: 'Indexed'
     policyRule: {
       if: { allOf: [ { field: 'type', equals: 'Microsoft.KeyVault/vaults' } ] }
       then: { effect: 'Audit' }
@@ -61,18 +62,15 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
   }
 }
 
-// 4. Policy: Require resource tags (FIXED: No parameters = No error)
-// RENAMED to -v2 to force a fresh deployment
+// 4. Policy: Require resource tags (v2)
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags-v2' 
   properties: {
     displayName: 'Require resource tags'
     policyType: 'Custom'
-    mode: 'All'
-    // We removed the 'parameters' block entirely
+    mode: 'All' // Mode 'All' is required for tag checks
     policyRule: {
       if: {
-        // We inject the tag name directly into the rule
         field: 'tags[\'${tagName}\']'
         exists: false
       }
@@ -85,7 +83,7 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
 
 // 5. Policy Initiative
 resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
-  name: '${projectName}-baseline-initiative-v2' // Renamed for fresh deployment
+  name: '${projectName}-baseline-initiative-v2'
   properties: {
     displayName: '${projectName} Baseline Policy Initiative'
     policyType: 'Custom'
