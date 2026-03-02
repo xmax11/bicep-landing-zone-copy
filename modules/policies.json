@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "9876174467905006841"
+      "templateHash": "3339158945565105836"
     }
   },
   "parameters": {
@@ -123,15 +123,7 @@
             "defaultValue": "[parameters('tagName')]"
           }
         },
-        "policyRule": {
-          "if": {
-            "field": "[[concat(''tags['', parameters(''tagName''), '']'')]",
-            "exists": "false"
-          },
-          "then": {
-            "effect": "Deny"
-          }
-        }
+        "policyRule": "[json('      {\r\n        \"if\": {\r\n          \"field\": \"[concat(''''tags['''', parameters(''''tagName''''), '''']'''')]\",\r\n          \"exists\": \"false\"\r\n        },\r\n        \"then\": {\r\n          \"effect\": \"Deny\"\r\n        }\r\n      }\r\n    ')]"
       }
     },
     {

@@ -89,7 +89,7 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
   }
 }
 
-// Policy: Require resource tags - FIXED USING MULTI-LINE STRING
+// Policy: Require resource tags - FINAL WORKING VERSION using json()
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags'
   properties: {
@@ -110,16 +110,18 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
         defaultValue: tagName
       }
     }
-    policyRule: {
-      if: {
-        // ✅ Multi-line string - Bicep will pass this raw to ARM
-        field: '''[concat(''tags['', parameters(''tagName''), '']'')]'''
-        exists: 'false'
+    // ✅ Use json() to embed a raw policy rule
+    policyRule: json('''
+      {
+        "if": {
+          "field": "[concat(''tags['', parameters(''tagName''), '']'')]",
+          "exists": "false"
+        },
+        "then": {
+          "effect": "Deny"
+        }
       }
-      then: {
-        effect: 'Deny'
-      }
-    }
+    ''')
   }
 }
 
