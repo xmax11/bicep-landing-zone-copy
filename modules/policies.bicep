@@ -1,151 +1,105 @@
-/*
-  Policies Module - Custom Azure Policy Definitions and Initiative
-  Target Scope: subscription
-*/
-
 targetScope = 'subscription'
 
 param location string
 param projectName string
 param tagName string = 'environment'
 
-// 1. Policy: Enforce TLS 1.2 for Storage Accounts
+// 1. TLS Policy
 resource tlsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-enforce-tls-12'
   properties: {
-    displayName: 'Enforce TLS 1.2 for Storage Accounts'
-    description: 'Ensures all storage accounts use TLS 1.2 or higher'
+    displayName: 'Enforce TLS 1.2'
     policyType: 'Custom'
     mode: 'All'
     policyRule: {
       if: {
         allOf: [
-          {
-            field: 'type'
-            equals: 'Microsoft.Storage/storageAccounts'
-          }
-          {
-            field: 'Microsoft.Storage/storageAccounts/minimumTlsVersion'
-            notEquals: 'TLS1_2'
-          }
+          { field: 'type', equals: 'Microsoft.Storage/storageAccounts' }
+          { field: 'Microsoft.Storage/storageAccounts/minimumTlsVersion', notEquals: 'TLS1_2' }
         ]
       }
-      then: {
-        effect: 'Deny'
-      }
+      then: { effect: 'Deny' }
     }
   }
 }
 
-// 2. Policy: Enforce HTTPS only for Storage Accounts
+// 2. HTTPS Policy
 resource httpsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-enforce-https'
   properties: {
-    displayName: 'Enforce HTTPS only for Storage Accounts'
-    description: 'Ensures all storage accounts enforce HTTPS only'
+    displayName: 'Enforce HTTPS'
     policyType: 'Custom'
     mode: 'All'
     policyRule: {
       if: {
         allOf: [
-          {
-            field: 'type'
-            equals: 'Microsoft.Storage/storageAccounts'
-          }
-          {
-            field: 'Microsoft.Storage/storageAccounts/supportsHttpsTrafficOnly'
-            notEquals: 'true'
-          }
+          { field: 'type', equals: 'Microsoft.Storage/storageAccounts' }
+          { field: 'Microsoft.Storage/storageAccounts/supportsHttpsTrafficOnly', notEquals: 'true' }
         ]
       }
-      then: {
-        effect: 'Deny'
-      }
+      then: { effect: 'Deny' }
     }
   }
 }
 
-// 3. Policy: Audit Key Vault Encryption
+// 3. KV Audit Policy
 resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-audit-kv-encryption'
   properties: {
     displayName: 'Audit Key Vault Encryption'
-    description: 'Ensures Key Vaults have encryption enabled'
     policyType: 'Custom'
     mode: 'All'
     policyRule: {
-      if: {
-        allOf: [
-          {
-            field: 'type'
-            equals: 'Microsoft.KeyVault/vaults'
-          }
-        ]
-      }
-      then: {
-        effect: 'Audit'
-      }
+      if: { allOf: [ { field: 'type', equals: 'Microsoft.KeyVault/vaults' } ] }
+      then: { effect: 'Audit' }
     }
   }
 }
 
-// 4. Policy: Require resource tags
+// 4. Tag Policy (Unique Parameter Name: def_tagName)
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags'
   properties: {
     displayName: 'Require resource tags'
-    description: 'Ensures all resources have required tags'
     policyType: 'Custom'
     mode: 'All'
-    metadata: { category: 'Tags' }
     parameters: {
-      defTagName: {
+      def_tagName: {
         type: 'String'
         defaultValue: tagName
       }
     }
     policyRule: {
       if: {
-        // Essential: Single quotes with backslash escaping for Bicep strings
-        field: 'tags[parameters(\'defTagName\')]'
+        field: 'tags[parameters(\'def_tagName\')]'
         exists: false
       }
-      then: {
-        effect: 'Deny'
-      }
+      then: { effect: 'Deny' }
     }
   }
 }
 
-// 5. Policy Initiative (Set)
+// 5. Initiative (Unique Parameter Name: set_tagName)
 resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
   name: '${projectName}-baseline-initiative'
   properties: {
-    displayName: '${projectName} Baseline Policy Initiative'
-    description: 'Baseline policies for landing zone'
+    displayName: '${projectName} Baseline Initiative'
     policyType: 'Custom'
     parameters: {
-      setTagName: {
+      set_tagName: {
         type: 'String'
         defaultValue: tagName
       }
     }
     policyDefinitions: [
-      {
-        policyDefinitionId: tlsPolicy.id
-      }
-      {
-        policyDefinitionId: httpsPolicy.id
-      }
-      {
-        policyDefinitionId: kvEncryptionPolicy.id
-      }
+      { policyDefinitionId: tlsPolicy.id }
+      { policyDefinitionId: httpsPolicy.id }
+      { policyDefinitionId: kvEncryptionPolicy.id }
       {
         policyDefinitionId: tagPolicy.id
         parameters: {
-          // This maps the 'setTagName' from the Initiative to the 'defTagName' in the Policy
-          defTagName: {
-            value: '[parameters(\'setTagName\')]'
+          def_tagName: {
+            value: '[parameters(\'set_tagName\')]'
           }
         }
       }
@@ -153,25 +107,18 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
   }
 }
 
-// 6. Policy Assignment (at subscription scope)
+// 6. Assignment
 resource baselineAssignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
-  // Policy assignment names have a strict 64-character limit
-  name: take('${projectName}-baseline-asgn', 24)
+  name: take('${projectName}-asgn', 24)
   location: location
   properties: {
-    displayName: '${projectName} Baseline Policy Assignment'
-    description: 'Assignment of baseline policy initiative'
+    displayName: '${projectName} Assignment'
     policyDefinitionId: baselineInitiative.id
     parameters: {
-      setTagName: {
+      set_tagName: {
         value: tagName
       }
     }
   }
-  identity: {
-    type: 'SystemAssigned'
-  }
+  identity: { type: 'SystemAssigned' }
 }
-
-output policyInitiativeId string = baselineInitiative.id
-output policyAssignmentId string = baselineAssignment.id
