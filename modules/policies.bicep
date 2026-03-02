@@ -9,7 +9,7 @@ param location string
 param projectName string
 param tagName string = 'environment'
 
-// Policy: Enforce TLS 1.2 for Storage Accounts
+// 1. Policy: Enforce TLS 1.2 for Storage Accounts
 resource tlsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-enforce-tls-12'
   properties: {
@@ -37,7 +37,7 @@ resource tlsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   }
 }
 
-// Policy: Enforce HTTPS only for Storage Accounts
+// 2. Policy: Enforce HTTPS only for Storage Accounts
 resource httpsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-enforce-https'
   properties: {
@@ -65,7 +65,7 @@ resource httpsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   }
 }
 
-// Policy: Audit Key Vault Encryption
+// 3. Policy: Audit Key Vault Encryption
 resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-audit-kv-encryption'
   properties: {
@@ -89,8 +89,7 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
   }
 }
 
-// Policy: Require resource tags – CORRECTED with boolean exists
-// Policy: Require resource tags – CORRECTED
+// 4. Policy: Require resource tags (FIXED QUOTES AND ESCAPING)
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags'
   properties: {
@@ -98,18 +97,22 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
     description: 'Ensures all resources have required tags'
     policyType: 'Custom'
     mode: 'All'
-    metadata: { category: 'Tags' }
+    metadata: {
+      category: 'Tags'
+    }
     parameters: {
       tagName: {
         type: 'String'
-        metadata: { description: 'Name of the tag', displayName: 'Tag Name' }
+        metadata: {
+          description: 'Name of the tag'
+          displayName: 'Tag Name'
+        }
         defaultValue: tagName
       }
     }
     policyRule: {
       if: {
-        // Use single quotes and escape the inner single quotes with \
-        field: 'tags[parameters(\'tagName\')]' 
+        field: 'tags[parameters(\'tagName\')]'
         exists: false
       }
       then: {
@@ -118,13 +121,22 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
     }
   }
 }
-// Policy Initiative (Set)
+
+// 5. Policy Initiative (Set)
+// 5. Policy Initiative (Set)
 resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
   name: '${projectName}-baseline-initiative'
   properties: {
     displayName: '${projectName} Baseline Policy Initiative'
     description: 'Baseline policies for landing zone'
     policyType: 'Custom'
+    // 1. Define the parameter here so the Initiative knows it exists
+    parameters: {
+      tagName: {
+        type: 'String'
+        defaultValue: tagName
+      }
+    }
     policyDefinitions: [
       {
         policyDefinitionId: tlsPolicy.id
@@ -137,14 +149,20 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
       }
       {
         policyDefinitionId: tagPolicy.id
+        // 2. Map the Initiative parameter to the specific Policy Definition parameter
+        parameters: {
+          tagName: {
+            value: '[parameters(\'tagName\')]'
+          }
+        }
       }
     ]
   }
 }
 
-// Policy Assignment (at subscription scope)
+// 6. Policy Assignment
 resource baselineAssignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
-  name: '${projectName}-baseline-assignment'
+  name: take('${projectName}-baseline-assignment', 64) // Assignment names have a 64 char limit
   location: location
   properties: {
     displayName: '${projectName} Baseline Policy Assignment'
