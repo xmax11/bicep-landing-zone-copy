@@ -89,23 +89,26 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
   }
 }
 
-// 4. Policy: Require resource tags (FIXED QUOTES AND ESCAPING)
-// Policy: Require resource tags
+// 4. Policy: Require resource tags
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags'
   properties: {
     displayName: 'Require resource tags'
+    description: 'Ensures all resources have required tags'
     policyType: 'Custom'
     mode: 'All'
+    metadata: { category: 'Tags' }
     parameters: {
-      tagName: { // <--- This name must match exactly below
+      defTagName: { // Definition level parameter name
         type: 'String'
+        metadata: { description: 'Name of the tag', displayName: 'Tag Name' }
         defaultValue: tagName
       }
     }
     policyRule: {
       if: {
-        field: 'tags[parameters(\'tagName\')]'
+        // Correct single quote escaping for Bicep
+        field: 'tags[parameters(\'defTagName\')]'
         exists: false
       }
       then: {
@@ -116,16 +119,14 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
 }
 
 // 5. Policy Initiative (Set)
-
 resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
   name: '${projectName}-baseline-initiative'
   properties: {
     displayName: '${projectName} Baseline Policy Initiative'
     description: 'Baseline policies for landing zone'
     policyType: 'Custom'
-    // 1. You must declare the parameter at the Initiative level
     parameters: {
-      tagName: {
+      setTagName: { // Initiative level parameter name
         type: 'String'
         defaultValue: tagName
       }
@@ -142,10 +143,9 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
       }
       {
         policyDefinitionId: tagPolicy.id
-        // 2. You must MAP the Initiative's parameter to the Definition's parameter
         parameters: {
-          tagName: {
-            value: '[parameters(\'tagName\')]'
+          defTagName: { // Mapping the Initiative parameter to the Definition parameter
+            value: '[parameters(\'setTagName\')]'
           }
         }
       }
@@ -153,17 +153,16 @@ resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-0
   }
 }
 
-// Policy Assignment (at subscription scope)
+// 6. Policy Assignment (at subscription scope)
 resource baselineAssignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
-  name: take('${projectName}-baseline-asgn', 24) // Kept short to avoid 64-char limit
+  name: take('${projectName}-baseline-asgn', 24)
   location: location
   properties: {
     displayName: '${projectName} Baseline Policy Assignment'
     description: 'Assignment of baseline policy initiative'
     policyDefinitionId: baselineInitiative.id
-    // 3. Finally, provide the value during the assignment
     parameters: {
-      tagName: {
+      setTagName: { // Passing the value to the Initiative parameter
         value: tagName
       }
     }
