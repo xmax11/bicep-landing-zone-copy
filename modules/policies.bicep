@@ -110,21 +110,17 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
         defaultValue: tagName
       }
     }
-    // Use json() to embed raw JSON; exists is boolean false
-    policyRule: json('''
-      {
-        "if": {
-          "field": "[concat(''tags['', parameters(''tagName''), '']'')]",
-          "exists": false
-        },
-        "then": {
-          "effect": "Deny"
-        }
+    policyRule: {
+      if: {
+        field: 'tags[${tagName}]'
+        exists: false
       }
-    ''')
+      then: {
+        effect: 'Deny'
+      }
+    }
   }
 }
-
 // Policy Initiative (Set)
 resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
   name: '${projectName}-baseline-initiative'
