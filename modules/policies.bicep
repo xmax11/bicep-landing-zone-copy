@@ -90,6 +90,7 @@ resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-0
 }
 
 // Policy: Require resource tags – CORRECTED with boolean exists
+// Policy: Require resource tags – CORRECTED
 resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
   name: '${projectName}-require-tags'
   properties: {
@@ -97,22 +98,18 @@ resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
     description: 'Ensures all resources have required tags'
     policyType: 'Custom'
     mode: 'All'
-    metadata: {
-      category: 'Tags'
-    }
+    metadata: { category: 'Tags' }
     parameters: {
       tagName: {
         type: 'String'
-        metadata: {
-          description: 'Name of the tag'
-          displayName: 'Tag Name'
-        }
+        metadata: { description: 'Name of the tag', displayName: 'Tag Name' }
         defaultValue: tagName
       }
     }
     policyRule: {
       if: {
-        field: 'tags[${tagName}]'
+        // Use single quotes and escape the inner single quotes with \
+        field: 'tags[parameters(\'tagName\')]' 
         exists: false
       }
       then: {
