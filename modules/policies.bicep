@@ -1,111 +1,46 @@
-/*
-  Policies Module - Custom Azure Policy Definitions and Initiative
-  Target Scope: subscription
-*/
-
 targetScope = 'subscription'
 
-param location string
 param projectName string
-param tagName string = 'environment'
+param environment string
 
-// 1. Policy: Enforce TLS 1.2
-resource tlsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
-  name: '${projectName}-enforce-tls-12'
-  properties: {
-    displayName: 'Enforce TLS 1.2 for Storage Accounts'
-    policyType: 'Custom'
-    mode: 'Indexed' // Use Indexed for resource-specific properties
-    policyRule: {
-      if: {
-        allOf: [
-          { field: 'type', equals: 'Microsoft.Storage/storageAccounts' }
-          { field: 'Microsoft.Storage/storageAccounts/minimumTlsVersion', notEquals: 'TLS1_2' }
-        ]
-      }
-      then: { effect: 'Deny' }
-    }
-  }
-}
+// Define the IDs as variables for clarity
+var inheritTagId = '/providers/Microsoft.Authorization/policyDefinitions/cd3aa116-8875-446f-a212-051a4c79a6b0'
+var storageTlsId = '/providers/Microsoft.Authorization/policyDefinitions/a8a5e003-8820-432a-bc93-a97920199d25'
 
-// 2. Policy: Enforce HTTPS (FIXED ALIAS)
-resource httpsPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
-  name: '${projectName}-enforce-https'
-  properties: {
-    displayName: 'Enforce HTTPS only for Storage Accounts'
-    policyType: 'Custom'
-    mode: 'Indexed'
-    policyRule: {
-      if: {
-        allOf: [
-          { field: 'type', equals: 'Microsoft.Storage/storageAccounts' }
-          // Fixed the alias path here
-          { field: 'Microsoft.Storage/storageAccounts/supportsHttpsTrafficOnly', notEquals: 'true' }
-        ]
-      }
-      then: { effect: 'Deny' }
-    }
-  }
-}
-
-// 3. Policy: Audit Key Vault
-resource kvEncryptionPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
-  name: '${projectName}-audit-kv-encryption'
-  properties: {
-    displayName: 'Audit Key Vault Encryption'
-    policyType: 'Custom'
-    mode: 'Indexed'
-    policyRule: {
-      if: { allOf: [ { field: 'type', equals: 'Microsoft.KeyVault/vaults' } ] }
-      then: { effect: 'Audit' }
-    }
-  }
-}
-
-// 4. Policy: Require resource tags (v2)
-resource tagPolicy 'Microsoft.Authorization/policyDefinitions@2021-06-01' = {
-  name: '${projectName}-require-tags-v2' 
-  properties: {
-    displayName: 'Require resource tags'
-    policyType: 'Custom'
-    mode: 'All' // Mode 'All' is required for tag checks
-    policyRule: {
-      if: {
-        field: 'tags[\'${tagName}\']'
-        exists: false
-      }
-      then: {
-        effect: 'Deny'
-      }
-    }
-  }
-}
-
-// 5. Policy Initiative
-resource baselineInitiative 'Microsoft.Authorization/policySetDefinitions@2021-06-01' = {
-  name: '${projectName}-baseline-initiative-v2'
-  properties: {
-    displayName: '${projectName} Baseline Policy Initiative'
-    policyType: 'Custom'
-    policyDefinitions: [
-      { policyDefinitionId: tlsPolicy.id }
-      { policyDefinitionId: httpsPolicy.id }
-      { policyDefinitionId: kvEncryptionPolicy.id }
-      { policyDefinitionId: tagPolicy.id }
-    ]
-  }
-}
-
-// 6. Policy Assignment
-resource baselineAssignment 'Microsoft.Authorization/policyAssignments@2021-06-01' = {
-  name: take('${projectName}-asgn-v2', 24)
-  location: location
-  properties: {
-    displayName: '${projectName} Baseline Assignment'
-    policyDefinitionId: baselineInitiative.id
-  }
+// 1. Inherit Tag: Project
+resource inheritProjectTag 'Microsoft.Authorization/policyAssignments@2022-06-01' = {
+  name: 'inherit-project-tag'
+  location: 'eastus'
   identity: { type: 'SystemAssigned' }
+  properties: {
+    displayName: 'Inherit Project Tag from Resource Group'
+    policyDefinitionId: inheritTagId
+    parameters: {
+      tagName: { value: 'project' }
+    }
+  }
 }
 
-output policyInitiativeId string = baselineInitiative.id
-output policyAssignmentId string = baselineAssignment.id
+// 2. Inherit Tag: Environment
+resource inheritEnvTag 'Microsoft.Authorization/policyAssignments@2022-06-01' = {
+  name: 'inherit-env-tag'
+  location: 'eastus'
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    displayName: 'Inherit Environment Tag from Resource Group'
+    policyDefinitionId: inheritTagId
+    parameters: {
+      tagName: { value: 'environment' }
+    }
+  }
+}
+
+// 3. Enforce TLS 1.2 on Storage
+resource storageTlsPolicy 'Microsoft.Authorization/policyAssignments@2022-06-01' = {
+  name: 'enforce-storage-tls-12'
+  location: 'eastus'
+  properties: {
+    displayName: 'Storage accounts should have minimum TLS version set to 1.2'
+    policyDefinitionId: storageTlsId
+  }
+}

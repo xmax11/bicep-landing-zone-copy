@@ -10,101 +10,62 @@ param deployPrivateDns bool = true
 param logAnalyticsWorkspaceId string = ''
 param hubVnetId string
 param spokeVnetId string
-param keyVaultAccessObjectId string
 
-// Key Vault
+// Common tags
+var commonTags = {
+  environment: environment
+  project: projectName
+}
+
+// Key Vault - RBAC enabled, deployer needs Key Vault Contributor role
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
   name: keyVaultName
   location: location
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     tenantId: subscription().tenantId
     sku: {
       family: 'A'
       name: 'standard'
     }
-    accessPolicies: [
-      {
-        tenantId: subscription().tenantId
-        objectId: keyVaultAccessObjectId
-        permissions: {
-          keys: [
-            'get'
-            'list'
-            'create'
-            'update'
-          ]
-          secrets: [
-            'get'
-            'list'
-            'set'
-            'delete'
-          ]
-          certificates: [
-            'get'
-            'list'
-            'create'
-            'update'
-          ]
-        }
-      }
-    ]
+    accessPolicies: []
     enabledForDeployment: true
     enabledForDiskEncryption: true
     enabledForTemplateDeployment: true
     enablePurgeProtection: true
-    enableRbacAuthorization: false
+    enableRbacAuthorization: true  // Use RBAC for authorization
     softDeleteRetentionInDays: 7
   }
 }
-
 // Private DNS Zones
 resource storagePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
   name: 'privatelink.blob.core.windows.net'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
 }
 
 resource keyVaultPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
   name: 'privatelink.vaultcore.azure.net'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
 }
 
 resource sqlPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
   name: 'privatelink.database.windows.net'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
 }
 
 resource appServicePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
   name: 'privatelink.azurewebsites.net'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
 }
 
 resource cosmosDbPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
   name: 'privatelink.documents.azure.com'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
 }
 
 // VNet links for Storage DNS zone
@@ -112,10 +73,7 @@ resource storagePrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetw
   parent: storagePrivateDns
   name: '${projectName}-storage-hub-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -126,10 +84,7 @@ resource storagePrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNe
   parent: storagePrivateDns
   name: '${projectName}-storage-spoke-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -141,10 +96,7 @@ resource keyVaultPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNet
   parent: keyVaultPrivateDns
   name: '${projectName}-keyvault-hub-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -155,10 +107,7 @@ resource keyVaultPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualN
   parent: keyVaultPrivateDns
   name: '${projectName}-keyvault-spoke-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -170,10 +119,7 @@ resource sqlPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkL
   parent: sqlPrivateDns
   name: '${projectName}-sql-hub-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -184,10 +130,7 @@ resource sqlPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetwor
   parent: sqlPrivateDns
   name: '${projectName}-sql-spoke-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -199,10 +142,7 @@ resource appServicePrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualN
   parent: appServicePrivateDns
   name: '${projectName}-appservice-hub-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -213,10 +153,7 @@ resource appServicePrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtua
   parent: appServicePrivateDns
   name: '${projectName}-appservice-spoke-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }
@@ -228,10 +165,7 @@ resource cosmosDbPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNet
   parent: cosmosDbPrivateDns
   name: '${projectName}-cosmosdb-hub-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: hubVnetId }
@@ -242,10 +176,7 @@ resource cosmosDbPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualN
   parent: cosmosDbPrivateDns
   name: '${projectName}-cosmosdb-spoke-link'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     registrationEnabled: false
     virtualNetwork: { id: spokeVnetId }

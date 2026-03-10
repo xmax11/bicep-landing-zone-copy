@@ -6,16 +6,20 @@ param location string
 param logAnalyticsName string
 param projectName string
 param environment string
-param alertEmailAddress string
+@description('Alert email address for action group (leave empty to skip action group creation)')
+param alertEmailAddress string = ''
+
+// Common tags
+var commonTags = {
+  environment: environment
+  project: projectName
+}
 
 // Log Analytics Workspace
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-12-01-preview' = {
   name: logAnalyticsName
   location: location
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     sku: {
       name: 'PerGB2018'
@@ -24,14 +28,11 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-12-01-previ
   }
 }
 
-// Action Group for alerts
-resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
+// Action Group for alerts (only create if email provided)
+resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if(!empty(alertEmailAddress)) {
   name: '${projectName}-ag-${location}'
   location: 'global'
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   properties: {
     groupShortName: 'alerts'
     enabled: true
@@ -49,4 +50,4 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = {
 
 output logAnalyticsWorkspaceId string = logAnalytics.id
 output logAnalyticsWorkspaceName string = logAnalytics.name
-output actionGroupId string = actionGroup.id
+output actionGroupId string = !empty(alertEmailAddress) ? actionGroup.id : ''

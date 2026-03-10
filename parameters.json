@@ -9,7 +9,7 @@
       "value": "production"
     },
     "projectName": {
-      "value": "sinet-lz3"
+      "value": "sinet-lz-final"
     },
     "hubVnetAddressSpace": {
       "value": "10.100.0.0/16"
@@ -17,8 +17,8 @@
     "spokeVnetAddressSpace": {
       "value": "10.200.0.0/16"
     },
-    "firewallPrivateIp": {
-      "value": "10.100.0.4"
+    "nvaPrivateIp": {
+      "value": ""
     },
     "deployLogAnalytics": {
       "value": true
@@ -30,10 +30,7 @@
       "value": true
     },
     "alertEmailAddress": {
-      "value": ""
-    },
-    "keyVaultAccessObjectId": {
-      "value": ""
+      "value": "alerts@contoso.com"
     }
   }
 }

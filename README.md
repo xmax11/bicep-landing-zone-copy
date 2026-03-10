@@ -1,518 +1,357 @@
-# Azure Landing Zone - Bicep Infrastructure as Code
+# Azure Hub-and-Spoke Landing Zone - Bicep Deployment
 
 ## Overview
 
-This Bicep-based landing zone deployment provides a complete, production-ready Hub and Spoke network topology with enterprise-grade security, monitoring, and governance.
+This repository contains an **Azure Landing Zone** deployed using **Bicep** with a **Hub-and-Spoke** network topology. This architecture provides a secure, scalable foundation for Azure workloads with centralized network security and management.
 
-## Architecture
+### Components Deployed
 
-### Network Topology: Hub and Spoke
+| Component | Description |
+|-----------|-------------|
+| **Hub VNet** | Central network (10.100.0.0/16) containing Azure Firewall, Gateway, Bastion, DNS Resolver, and Management subnets |
+| **Spoke VNet** | Application network (10.200.0.0/16) with Infra, App, Data, and PaaS subnets |
+| **Azure Firewall** | Centralized network security with dynamically assigned private IP |
+| **Key Vault** | RBAC-enabled secrets management with private endpoint |
+| **Storage Account** | LRS storage with private endpoint for secure data access |
+| **Log Analytics** | Monitoring workspace for diagnostics and alerting |
+| **Private Endpoints** | Secure private access to Key Vault and Storage |
+| **Azure Policies** | Custom policies for TLS enforcement and tag compliance |
+| **VNet Peering** | Bi-directional peering between Hub and Spoke |
+
+### Architecture Diagram
 
 ```
-        ┌─────────────────────────────────┐
-        │       Hub VNet                  │
-        │    (10.100.0.0/16)              │
-        │                                 │
-        │ ┌──────────────────────────┐   │
-        │ │ AzureFirewallSubnet      │   │
-        │ │ (10.100.0.0/24)          │   │
-        │ └──────────────────────────┘   │
-        │ ┌──────────────────────────┐   │
-        │ │ GatewaySubnet            │   │
-        │ │ (10.100.1.0/24)          │   │
-        │ └──────────────────────────┘   │
-        │ ┌──────────────────────────┐   │
-        │ │ ManagementSubnet         │   │
-        │ │ (10.100.2.0/24)          │   │
-        │ └──────────────────────────┘   │
-        └─────────────────────────────────┘
-                      │
-         ┌────────────┼────────────┐
-         │            │            │
-    ┌────────────────┼──────────────────────┐
-    │   Spoke VNet                           │
-    │   (10.200.0.0/16)                     │
-    │                                        │
-    │  ┌──────────────────────────────┐     │
-    │  │ InfraSubnet (10.200.0.0/24)  │     │
-    │  └──────────────────────────────┘     │
-    │  ┌──────────────────────────────┐     │
-    │  │ AppSubnet (10.200.1.0/24)    │     │
-    │  └──────────────────────────────┘     │
-    │  ┌──────────────────────────────┐     │
-    │  │ DataSubnet (10.200.2.0/24)   │     │
-    │  └──────────────────────────────┘     │
-    │  ┌──────────────────────────────┐     │
-    │  │ PaaSSvcSubnet (10.200.3.0/24)│     │
-    │  └──────────────────────────────┘     │
-    └────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        Azure Subscription                        │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                     Hub VNet (10.100.0.0/16)              │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐│  │
+│  │  │AzureFirewall│ │ Gateway     │ │    Bastion          ││  │
+│  │  │  Subnet     │ │ Subnet      │ │    Subnet           ││  │
+│  │  │ Dynamic IP  │ │             │ │                     ││  │
+│  │  └─────────────┘ └─────────────┘ └─────────────────────┘│  │
+│  │  ┌─────────────┐ ┌─────────────┐                         │  │
+│  │  │ DNS Resolver│ │ Identity    │                         │  │
+│  │  │   Subnet    │ │   Subnet    │                         │  │
+│  │  └─────────────┘ └─────────────┘                         │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                         VNet Peering                             │
+│                              │                                   │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                   Spoke VNet (10.200.0.0/16)             │  │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐│  │
+│  │  │   Infra     │ │    App      │ │      Data           ││  │
+│  │  │   Subnet    │ │   Subnet    │ │     Subnet          ││  │
+│  │  └─────────────┘ └─────────────┘ └─────────────────────┘│  │
+│  │  ┌─────────────────────────────────────────────────────┐ │  │
+│  │  │               PaaS Service Subnet                    │ │  │
+│  │  │     (Private Endpoints for Key Vault & Storage)     │ │  │
+│  │  └─────────────────────────────────────────────────────┘ │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌────────────────────────┐│
+│  │ Key Vault   │  │   Storage   │  │   Log Analytics        ││
+│  │ (RBAC)      │  │  Account    │  │   Workspace            ││
+│  └─────────────┘  └─────────────┘  └────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Components Deployed
-
-### 1. Networking (`modules/networking.bicep`)
-- **Hub VNet** (10.100.0.0/16)
-  - AzureFirewallSubnet
-  - GatewaySubnet
-  - ManagementSubnet
-  
-- **Spoke VNet** (10.200.0.0/16)
-  - InfraSubnet - Infrastructure resources
-  - AppSubnet - Application tier
-  - DataSubnet - Data tier
-  - PaaSSvcSubnet - PaaS services with private endpoints
-
-- **Network Security Groups (NSGs)**
-  - Firewall NSG: Allows inbound from spoke, denies all else
-  - Gateway NSG: Allows VPN traffic (UDP 500, 4500)
-  - Management NSG: RDP, SSH from hub VNet, spoke traffic
-  - Infra NSG: Traffic from App and Data subnets
-  - App NSG: HTTP/HTTPS from internet, outbound to Data
-  - Data NSG: Inbound from App and Infra only
-  - PaaS NSG: VNet traffic only
-
-- **User Defined Routes (UDRs)**
-  - Management → Spoke routes through firewall
-  - Infra → Data routes (e.g., DB traffic)
-  - App ↔ Data bidirectional routing
-  - All routes back to hub for egress
-
-- **VNet Peering**
-  - Hub-to-Spoke: Allows forwarded traffic, gateway transit enabled
-  - Spoke-to-Hub: Uses remote gateway
-
-### 2. Monitoring (`modules/monitoring.bicep`)
-- **Log Analytics Workspace**
-  - 30-day retention
-  - PerGB2018 pricing tier
-  - Central logging for all resources
-  
-- **Action Group**
-  - Email alerts for Service Disruption
-  - Configured for degradation notifications
-
-- **Metric Alerts**
-  - Service disruption monitoring
-  - Email notifications to admin@example.com
-
-### 3. Security (`modules/security.bicep`)
-- **Azure Key Vault**
-  - Standard tier
-  - Soft delete enabled (7 days)
-  - Purge protection enabled
-  - RBAC authorization
-  - Supports deployment, disk encryption, template deployment
-
-- **Private DNS Zones**
-  - `privatelink.blob.core.windows.net` (Storage)
-  - `privatelink.vaultcore.azure.net` (Key Vault)
-  - `privatelink.database.windows.net` (SQL)
-  - `privatelink.azurewebsites.net` (App Service)
-  - `privatelink.documents.azure.com` (CosmosDB)
-
-### 4. Storage (`modules/storage.bicep`)
-- **Storage Account**
-  - Locally Redundant Storage (LRS)
-  - Hot access tier
-  - TLS 1.2 minimum
-  - HTTPS only
-  - Blob public access disabled
-  - Network ACLs: Deny by default
-
-- **Blob Service**
-  - 7-day soft delete
-  
-- **Containers**
-  - landing-zone (for bicep templates)
-  - diagnostics (for logs)
-
-### 5. Azure Policies (`modules/policies.bicep`)
-- **Custom Policy Definitions**
-  - Enforce TLS 1.2 for Storage Accounts
-  - Enforce HTTPS only
-  - Audit Key Vault encryption
-    - Restrict VM SKUs (previously enforced; restriction removed to allow workload sizing flexibility)
-  - Require environment tag on all resources
-
-- **Policy Initiative**
-  - Baseline compliance bundle
-  - Subscription-level assignment
+---
 
 ## Prerequisites
 
-1. **Azure CLI** (v2.40+)
-   ```bash
-   az --version
-   ```
+Before deploying the landing zone, ensure you have the following:
 
-2. **Bicep CLI** (included with Azure CLI 2.40+)
-   ```bash
-   az bicep version
-   ```
+### 1. Azure Subscription
+- An active Azure subscription
+- Sufficient quota for the required resources
 
-3. **Azure Subscription**
-   - Active subscription with permissions to create resources at subscription level
+### 2. Azure CLI
+- Azure CLI version **2.50.0 or later** installed
+- Bicep CLI installed (`az bicep install`)
 
-4. **Required Permissions**
-   - Contributor role at subscription level
-   - User Access Administrator role (for policy assignments)
+### 3. Required Permissions
+- **Contributor** or **Owner** role on the subscription
+- Key Vault Contributor role (for deployment identity to access Key Vault)
 
-## Deployment
+### 4. Verify Prerequisites
 
-### Option 1: Azure CLI (Recommended)
+Run the following commands to verify your environment:
 
-#### 1. Login to Azure
 ```bash
+# Check Azure CLI version
+az --version
+
+# Check Bicep installation
+az bicep version
+
+# Login to Azure
 az login
+
+# Set your subscription (replace with your subscription name or ID)
+az account set --subscription "Your-Subscription-Name"
+
+# Verify you're in the correct subscription
+az account show
 ```
 
-#### 2. Set your subscription
-```bash
-az account set --subscription "YOUR_SUBSCRIPTION_ID"
-```
+---
 
-#### 3. Deploy the landing zone
-```bash
-# Using parameters file
-az deployment sub create \
-  --location eastus \
-  --template-file main.bicep \
-  --parameters @parameters.json
+## Parameters to Update
 
-# OR using inline parameters
-az deployment sub create \
-  --location eastus \
-  --template-file main.bicep \
-  --parameters location=eastus environment=production projectName=lz
-```
+Before deployment, you must update the following parameters in [`parameters.json`](parameters.json):
 
-#### 4. Verify deployment
-```bash
-az deployment sub show --name mainDeployment
-az resource list --resource-group lz-rg-eastus
-```
+### Required Parameters
 
-### Option 2: PowerShell
+| Parameter | Description | Example Value |
+|-----------|-------------|---------------|
+| `projectName` | **UPDATE**: Name of your project (used for resource naming) | `myapp` |
+| `location` | **UPDATE**: Azure region | `eastus` |
+| `environment` | Environment name | `production` or `staging` |
+| `hubVnetAddressSpace` | **UPDATE**: CIDR for Hub VNet | `10.100.0.0/16` |
+| `spokeVnetAddressSpace` | **UPDATE**: CIDR for Spoke VNet | `10.200.0.0/16` |
+| `alertEmailAddress` | **UPDATE**: Email for monitoring alerts | `alerts@contoso.com` |
 
-```powershell
-# Set subscription
-Set-AzContext -Subscription "YOUR_SUBSCRIPTION_ID"
+### Optional Parameters
 
-# Deploy
-New-AzSubscriptionDeployment `
-  -Name "LandingZoneDeployment" `
-  -Location "eastus" `
-  -TemplateFile "main.bicep" `
-  -TemplateParameterFile "parameters.json"
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `deployLogAnalytics` | Enable Log Analytics deployment | `true` |
+| `deployPrivateDns` | Enable Private DNS Zones | `true` |
+| `deployAzurePolicies` | Enable Azure Policies | `true` |
+| `nvaPrivateIp` | Static IP for NVA/firewall (leave empty for dynamic) | `""` (dynamic) |
 
-# Verify
-Get-AzDeployment -Name "LandingZoneDeployment"
-```
+---
 
-### Option 3: GitHub Actions CI/CD
+## Deployment Steps
 
-Create `.github/workflows/deploy-landing-zone.yml`:
+### Step 1: Prepare parameters.json
 
-```yaml
-name: Deploy Landing Zone
+Create or update the [`parameters.json`](parameters.json) file with your values. **Update the following highlighted values**:
 
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'bicep/**'
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Deploy Landing Zone
-        uses: azure/arm-deploy@v1
-        with:
-          scope: subscription
-          region: eastus
-          template: main.bicep
-          parameters: @parameters.json
-```
-
-## Configuration
-
-### Update Parameters
-
-Edit `parameters.json` to customize:
+> **⚠️ IMPORTANT**: Replace the placeholder values marked with `<!-- UPDATE -->` with your specific configuration.
 
 ```json
 {
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
   "parameters": {
-    "location": { "value": "eastus" },
-    "environment": { "value": "production" },
-    "projectName": { "value": "lz" },
-    "hubVnetAddressSpace": { "value": "10.100.0.0/16" },
-    "spokeVnetAddressSpace": { "value": "10.200.0.0/16" },
-    "deployLogAnalytics": { "value": true },
-    "deployPrivateDns": { "value": true },
-    "deployAzurePolicies": { "value": true }
+    "location": {
+      "value": "eastus"  <!-- UPDATE: Your Azure region (e.g., eastus, westus2, uksouth) -->
+    },
+    "environment": {
+      "value": "production"  <!-- UPDATE: staging, production, or development -->
+    },
+    "projectName": {
+      "value": "myapp"  <!-- UPDATE: Your project name (used for resource naming) -->
+    },
+    "hubVnetAddressSpace": {
+      "value": "10.100.0.0/16"  <!-- UPDATE: Hub VNet CIDR block -->
+    },
+    "spokeVnetAddressSpace": {
+      "value": "10.200.0.0/16"  <!-- UPDATE: Spoke VNet CIDR block -->
+    },
+    "nvaPrivateIp": {
+      "value": ""  <!-- Optional: Leave empty for dynamic IP assignment -->
+    },
+    "deployLogAnalytics": {
+      "value": true  <!-- Set to false to skip Log Analytics -->
+    },
+    "deployPrivateDns": {
+      "value": true  <!-- Set to false to skip Private DNS Zones -->
+    },
+    "deployAzurePolicies": {
+      "value": true  <!-- Set to false to skip Policy deployment -->
+    },
+    "alertEmailAddress": {
+      "value": "alerts@contoso.com"  <!-- UPDATE: Your alert email address -->
+    }
   }
 }
 ```
 
-### Key Customization Points
+# Build the code if you made changes in parameters.json before deploying
 
-1. **Network CIDR Blocks**
-   - Hub: 10.100.0.0/16 (expandable for multiple hubs)
-   - Spoke: 10.200.0.0/16 (create multiple spoke VNets per region)
+az bicep build --file main.bicep
 
-2. **Log Analytics Retention**
-   - Edit `modules/monitoring.bicep` line: `retentionInDays: 30`
+### Step 2: Run Deployment
 
-3. **Storage Redundancy**
-   - Change `Standard_LRS` to `Standard_GRS` for geo-redundancy
+Deploy the landing zone using **subscription-level deployment**:
 
-4. **VM SKU Restrictions**
-   - Update `modules/policies.bicep` allowed SKUs array
+```bash
+# Deploy using parameters.json
+az deployment sub create \
+  --location eastus \
+  --template-file main.bicep \
+  --parameters @parameters.json
+```
 
-5. **Alert Email**
-   - Update `modules/monitoring.bicep` line: `emailAddress: 'admin@example.com'`
+> **Note**: The deployment location (`--location`) should match the `location` parameter in your `parameters.json`.
 
-## Deployment Outputs
+### Step 3: Enable/Disable Optional Components
 
-After successful deployment, you'll receive:
+To enable or disable optional components, modify the boolean parameters in `parameters.json`:
 
+#### Disable Log Analytics
 ```json
-{
-  "hubVnetId": "/subscriptions/.../resourceGroups/lz-rg-eastus/providers/Microsoft.Network/virtualNetworks/lz-hub-vnet",
-  "spokeVnetId": "/subscriptions/.../resourceGroups/lz-rg-eastus/providers/Microsoft.Network/virtualNetworks/lz-spoke-vnet",
-  "logAnalyticsWorkspaceId": "/subscriptions/.../resourceGroups/lz-rg-eastus/providers/Microsoft.OperationalInsights/workspaces/lz-law-eastus-xxx",
-  "keyVaultId": "/subscriptions/.../resourceGroups/lz-rg-eastus/providers/Microsoft.KeyVault/vaults/lz-kv-xxx",
-  "storageAccountId": "/subscriptions/.../resourceGroups/lz-rg-eastus/providers/Microsoft.Storage/storageAccounts/lzstxxx",
-  "resourceGroupName": "lz-rg-eastus",
-  "resourceGroupId": "/subscriptions/.../resourceGroups/lz-rg-eastus"
+"deployLogAnalytics": {
+  "value": false
 }
 ```
 
-## Post-Deployment Steps
-
-### 1. Configure Alert Email
-```bash
-# Update the action group with your email
-az monitor action-group update \
-  --name lz-ag-eastus \
-  --resource-group lz-rg-eastus \
-  --add-action email ServiceDisruptionAlert --email-address your-email@example.com
+#### Disable Private DNS Zones
+```json
+"deployPrivateDns": {
+  "value": false
+}
 ```
 
-### 2. Add VNet Peering to Additional Spokes
-```bash
-# Create new spoke VNet
-az network vnet create \
-  --name lz-spoke2-vnet \
-  --resource-group lz-rg-eastus \
-  --address-prefix 10.201.0.0/16 \
-  --location eastus
-
-# Peer with hub
-az network vnet peering create \
-  --name hub-to-spoke2 \
-  --resource-group lz-rg-eastus \
-  --vnet-name lz-hub-vnet \
-  --remote-vnet /subscriptions/.../lz-spoke2-vnet \
-  --allow-vnet-access \
-  --allow-forwarded-traffic \
-  --allow-gateway-transit
+#### Disable Azure Policies
+```json
+"deployAzurePolicies": {
+  "value": false
+}
 ```
 
-### 3. Deploy Firewall (Optional)
-```bash
-# Create public IP for firewall
-az network public-ip create \
-  --name lz-fw-pip \
-  --resource-group lz-rg-eastus \
-  --sku Standard \
-  --location eastus
+---
 
-# Create firewall
-az network firewall create \
-  --name lz-fw \
-  --resource-group lz-rg-eastus \
-  --location eastus
+## Post-Deployment
+
+### Verify Outputs
+
+After a successful deployment, the following outputs will be displayed. **Verify these values**:
+
+```json
+{
+  "hubVnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-hub-vnet",
+  "spokeVnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-spoke-vnet",
+  "firewallPrivateIpAddress": "10.100.0.4",
+  "keyVaultId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.KeyVault/vaults/<kv-name>",
+  "storageAccountId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Storage/storageAccounts/<st-name>",
+  "storagePrivateEndpointId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/privateEndpoints/<st-pe-name>",
+  "keyVaultPrivateEndpointId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/privateEndpoints/<kv-pe-name>",
+  "resourceGroupName": "<projectName>-rg-<location>",
+  "resourceGroupId": "/subscriptions/<subscription-id>/resourceGroups/<projectName>-rg-<location>",
+  "paasSubnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-spoke-vnet/subnets/PaaS",
+  "appSubnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-spoke-vnet/subnets/App"
+}
 ```
 
-### 4. Link Private DNS Zones to VNets
+### Access Key Vault
+
+The deployment identity automatically gets access to Key Vault through RBAC. No manual access configuration is required.
+
+To access Key Vault:
+
 ```bash
-# Link Storage DNS zone to spoke
-az network private-dns link vnet create \
-  --zone-name privatelink.blob.core.windows.net \
-  --name lz-spoke-link \
-  --resource-group lz-rg-eastus \
-  --virtual-network /subscriptions/.../lz-spoke-vnet \
-  --registration-enabled false
+# Get Key Vault details (replace with your resource group and key vault name)
+az keyvault show \
+  --name "<keyvault-name>" \
+  --resource-group "<resource-group-name>"
+
+# List secrets in Key Vault
+az keyvault secret list \
+  --vault-name "<keyvault-name>"
 ```
 
-## Troubleshooting
+### Verify Firewall Private IP is Dynamically Assigned
 
-### Deployment Fails on Policy Assignment
-- Ensure you have User Access Administrator role
-- Grant managed identity policy assignment permissions:
+The Azure Firewall receives a **dynamic private IP** from the AzureFirewallSubnet. To verify:
+
 ```bash
-az role assignment create \
-  --assignee <policy-assignment-principal-id> \
-  --role Contributor \
-  --scope /subscriptions/<subscription-id>
+# Get firewall private IP address
+az network firewall show \
+  --name "<projectName>-azure-fw" \
+  --resource-group "<projectName>-rg-<location>" \
+  --query "ipConfigurations[0].properties.privateIPAddress" \
+  --output tsv
 ```
 
-### VNet Peering Issues
-- Verify address spaces don't overlap
-- Check NSG rules: ensure cross-subnet traffic is allowed
-- Verify `allowVirtualNetworkAccess` is true
+> **Note**: The IP address is dynamically assigned and may change if the firewall is recreated.
 
-### Storage Account Access Denied
-- NSG rules might block traffic
-- Check network ACLs in storage account
-- Verify service endpoints configured on PaaS subnet
+---
 
-### Key Vault Access Issues
-- For Key Vault access, add IP to firewall:
-```bash
-az keyvault network-rule add \
-  --name lz-kv-xxx \
-  --resource-group lz-rg-eastus \
-  --ip-address YOUR_IP
-```
+## Tips & Notes
 
-## Cost Estimation
+### Dynamic Resource Creation
+- All resources are dynamically named using `uniqueString()` based on the subscription ID, location, and project name
+- This ensures unique naming across deployments without conflicts
+- Azure Firewall automatically receives a dynamic private IP from the AzureFirewallSubnet
 
-Typical monthly costs (East US):
+### No Manual Key Vault Access Required
+- The deployment identity automatically receives **Key Vault Administrator** (or Contributor) access through RBAC
+- No need to manually add access policies or role assignments
+- Simply use `az keyvault` commands after deployment and your identity will have access
 
-| Component | Estimated Cost |
-|-----------|----------------|
-| VNets & Peering | ~$3 |
-| NSGs | ~$1 |
-| Log Analytics (1GB/day) | ~$50 |
-| Storage Account (1TB) | ~$20 |
-| Key Vault | ~$1 |
-| **Total** | **~$75/month** |
+### Keep Tags Intact for Policy Compliance
+All resources are automatically tagged with:
 
-*Costs vary with usage and region*
+| Tag | Value | Description |
+|-----|-------|-------------|
+| `environment` | From parameter | Production/staging/development |
+| `project` | From parameter | Your project name |
+| `managedBy` | `Bicep` | Indicates deployment method |
 
-## Clean Up
+> **⚠️ IMPORTANT**: Do not remove or modify these tags, as they ensure compliance with deployed Azure Policies.
 
-### Remove entire landing zone
-```bash
-# Delete resource group (deletes all resources)
-az group delete \
-  --name lz-rg-eastus \
-  --yes --no-wait
+### Security Features
+- **Key Vault**: RBAC-enabled authorization (not access policies)
+- **Storage Account**: HTTPS-only, TLS 1.2 minimum enforced
+- **Private Endpoints**: All PaaS resources accessed via private links
+- **Firewall**: All traffic routed through central Azure Firewall
+- **VNet Peering**: Bi-directional peering for Hub-Spoke communication
 
-# Delete policy assignments (if separate scope)
-az policy assignment delete \
-  --name lz-baseline-assignment
-```
-
-### Remove specific components
-```bash
-# Delete storage account
-az storage account delete \
-  --name lzstxxx \
-  --resource-group lz-rg-eastus \
-  --yes
-
-# Delete key vault
-az keyvault delete \
-  --name lz-kv-xxx \
-  --resource-group lz-rg-eastus
-```
+---
 
 ## File Structure
 
 ```
-Bicep landing zone/
-├── main.bicep                 # Main orchestration template
-├── parameters.json            # Parameter values
-├── README.md                  # This file
-└── modules/
-    ├── networking.bicep       # VNet, Subnets, NSGs, UDRs
-    ├── monitoring.bicep       # Log Analytics, Action Groups
-    ├── security.bicep         # Key Vault, Private DNS Zones
-    ├── storage.bicep          # Storage Account, Containers
-    └── policies.bicep         # Azure Policies, Initiatives
+├── main.bicep                    # Main deployment template (subscription-level)
+├── parameters.json               # Deployment parameters (UPDATE THIS FILE)
+├── modules/
+│   ├── networking.bicep          # VNet, Firewall, NSGs, UDRs, Peering
+│   ├── security.bicep            # Key Vault, Private DNS Zones
+│   ├── storage.bicep             # Storage Account with diagnostics
+│   ├── monitoring.bicep          # Log Analytics, Action Groups, Alerts
+│   ├── private-endpoints.bicep   # Private Endpoints for KV & Storage
+│   └── policies.bicep            # Azure Policies (TLS, Tags)
+├── README.md                     # This file
+└── ARCHITECTURE.md               # Detailed architecture documentation
 ```
-
-## Scaling the Landing Zone
-
-### Add New Spoke VNet
-1. Create new VNet with unique address space (e.g., 10.201.0.0/16)
-2. Create subnets matching spoke pattern
-3. Create NSGs for new subnets
-4. Set up UDRs to other spokes through hub
-5. Peer with hub VNet
-6. Update firewall routes
-
-### Add Custom Policies
-1. Add policy definition to `modules/policies.bicep`
-2. Add to policy initiative
-3. Redeploy: `az deployment sub create ...`
-
-### Multi-Region Deployment
-```bash
-# Deploy to additional region
-az deployment sub create \
-  --location westus \
-  --template-file main.bicep \
-  --parameters @parameters-westus.json
-```
-
-Create `parameters-westus.json` with location set to westus.
-
-## Best Practices Applied
-
-✅ **Security**
-- Private DNS zones for PaaS services
-- Key Vault with soft delete & purge protection
-- HTTPS-only storage accounts
-- TLS 1.2 enforcement
-- NSGs restrict traffic by default
-
-✅ **Monitoring**
-- Centralized Log Analytics workspace
-- Diagnostic settings on all resources
-- Alert actions for service disruption
-- Metrics collection enabled
-
-✅ **Governance**
-- Baseline Azure Policies
-- Tag requirements
-- VM SKU restrictions
-- Compliance monitoring
-
-✅ **Scalability**
-- Modular Bicep templates
-- Reusable parameters
-- Easy spoke expansion
-- Supports multi-region
-
-✅ **Maintainability**
-- Inline documentation
-- Consistent naming conventions
-- Grouped resources by function
-- Easy to customize
-
-## Support & Contributions
-
-For issues or improvements, please update the templates and test deployment before sharing.
-
-## License
-
-This infrastructure template is provided as-is for your organization's use.
 
 ---
 
-**Last Updated:** February 12, 2026  
-**Version:** 1.0.0  
-**Status:** Production Ready
+## Troubleshooting
+
+### Deployment Fails with "Cannot parse the request"
+- Ensure you're using the latest Bicep version: `az bicep install`
+- Check that VNet peering doesn't have tags (not supported by Azure)
+
+### Key Vault Access Issues
+- Ensure your deploying identity has Key Vault Contributor role or Owner on the subscription
+- Verify RBAC is enabled on Key Vault:
+  ```bash
+  az keyvault show --name <kv-name> --query "properties.enableRbacAuthorization"
+  ```
+
+### Policy Compliance Errors
+- Ensure all resources have `environment` and `project` tags
+- Tags are automatically applied by the Bicep templates - do not remove them
+
+### Subscription Scope Deployment Required
+- This template uses `targetScope = 'subscription'` and must be deployed at subscription level
+- Use `az deployment sub create` (not `az deployment group create`)
+
+---
+
+## License
+
+MIT License - Feel free to use and modify for your needs.
+
+---
+
+## Support
+
+For issues or questions, please review the [Azure Bicep documentation](https://docs.microsoft.com/en-us/azure/azure-resource-manager/bicep/) or open an issue in this repository.

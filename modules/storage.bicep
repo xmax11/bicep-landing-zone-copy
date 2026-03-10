@@ -11,16 +11,19 @@ param projectName string
 param environment string
 param logAnalyticsWorkspaceId string = ''
 
+// Common tags
+var commonTags = {
+  environment: environment
+  project: projectName
+}
+
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
-  tags: {
-    environment: environment
-    project: projectName
-  }
+  tags: commonTags
   kind: 'StorageV2'
   sku: {
-    name: 'Standard_LRS'  // Locally Redundant Storage as per requirement
+    name: 'Standard_LRS'
   }
   properties: {
     accessTier: 'Hot'

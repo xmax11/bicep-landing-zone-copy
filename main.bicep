@@ -1,5 +1,6 @@
 /*
   Azure Landing Zone - Hub and Spoke Topology
+  Deployment: Networking + DNS + Private Endpoints Only (No VMs, SQL, App Services)
 */
 
 targetScope = 'subscription'
@@ -11,7 +12,7 @@ param location string = 'eastus'
 param environment string = 'production'
 
 @description('Project name used for resource naming')
-param projectName string = 'my-landing-zone'
+param projectName string = 'sinet-hub-spoke'
 
 @description('Hub VNet address space (CIDR)')
 param hubVnetAddressSpace string = '10.100.0.0/16'
@@ -19,11 +20,8 @@ param hubVnetAddressSpace string = '10.100.0.0/16'
 @description('Spoke VNet address space (CIDR)')
 param spokeVnetAddressSpace string = '10.200.0.0/16'
 
-@description('Private IP of Azure Firewall or NVA in hub')
-param firewallPrivateIp string = '10.100.0.4'
-
-@description('Private IP of NVA in spoke AppSubnet (if used)')
-param nvaPrivateIp string = '10.200.1.4'
+@description('Private IP of NVA in spoke AppSubnet (leave empty for dynamic assignment)')
+param nvaPrivateIp string = ''
 
 @description('Deploy Log Analytics Workspace')
 param deployLogAnalytics bool = true
@@ -35,12 +33,9 @@ param deployPrivateDns bool = true
 param deployAzurePolicies bool = true
 
 @description('Alert email address for action group')
-param alertEmailAddress string
+param alertEmailAddress string = 'alerts@contoso.com'
 
-@description('Azure AD Object ID for Key Vault access policy')
-param keyVaultAccessObjectId string
-
-// Generate unique suffix for storage and key vault names
+// Generate unique suffix for naming
 var uniqueSuffix = take(uniqueString(subscription().id, location), 8)
 var resourceGroupName = '${projectName}-rg-${location}'
 var logAnalyticsName = '${projectName}law${location}${uniqueSuffix}'
@@ -54,6 +49,7 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: {
     environment: environment
     project: projectName
+    managedBy: 'Bicep'
   }
 }
 
@@ -67,12 +63,11 @@ module networking 'modules/networking.bicep' = {
     environment: environment
     hubVnetAddressSpace: hubVnetAddressSpace
     spokeVnetAddressSpace: spokeVnetAddressSpace
-    firewallPrivateIp: firewallPrivateIp
     nvaPrivateIp: nvaPrivateIp
   }
 }
 
-// Deploy Monitoring (Log Analytics)
+// Deploy Monitoring
 module monitoring 'modules/monitoring.bicep' = if(deployLogAnalytics) {
   name: 'monitoringDeployment'
   scope: resourceGroup
@@ -98,7 +93,6 @@ module security 'modules/security.bicep' = {
     logAnalyticsWorkspaceId: deployLogAnalytics ? monitoring.outputs.logAnalyticsWorkspaceId : ''
     hubVnetId: networking.outputs.hubVnetId
     spokeVnetId: networking.outputs.spokeVnetId
-    keyVaultAccessObjectId: keyVaultAccessObjectId
   }
 }
 
@@ -111,11 +105,11 @@ module storage 'modules/storage.bicep' = {
     storageAccountName: storageAccountName
     projectName: projectName
     environment: environment
-    logAnalyticsWorkspaceId: deployLogAnalytics ? monitoring.outputs.logAnalyticsWorkspaceId : ''
+    logAnalyticsWorkspaceId: deployLogAnalytics && !empty(monitoring.outputs.logAnalyticsWorkspaceId) ? monitoring.outputs.logAnalyticsWorkspaceId : ''
   }
 }
 
-// Deploy Private Endpoints (for Storage and Key Vault)
+// Deploy Private Endpoints for Storage and Key Vault (no VMs/SQL/App Services)
 module privateEndpoints 'modules/private-endpoints.bicep' = {
   name: 'privateEndpointsDeployment'
   scope: resourceGroup
@@ -125,34 +119,51 @@ module privateEndpoints 'modules/private-endpoints.bicep' = {
     environment: environment
     storageAccountId: storage.outputs.storageAccountId
     keyVaultId: security.outputs.keyVaultId
-    hubVnetId: networking.outputs.hubVnetId
+    sqlServerId: ''
+    cosmosDbAccountId: ''
+    appServiceId: ''
     paasSubnetId: networking.outputs.paasSubnetId
     storagePrivateDnsZoneId: security.outputs.storagePrivateDnsZoneId
     keyVaultPrivateDnsZoneId: security.outputs.keyVaultPrivateDnsZoneId
+    sqlPrivateDnsZoneId: security.outputs.sqlPrivateDnsZoneId
+    appServicePrivateDnsZoneId: security.outputs.appServicePrivateDnsZoneId
+    cosmosDbPrivateDnsZoneId: security.outputs.cosmosDbPrivateDnsZoneId
   }
 }
 
-// Deploy Azure Policies
-// Deploy Azure Policies
+// Deploy Azure Policies at the Subscription Level
 module policies 'modules/policies.bicep' = if(deployAzurePolicies) {
-  name: 'policiesDeployment'
-  // Since main is subscription scope, the module defaults to subscription, 
-  // but being explicit helps prevent deployment mapping errors.
+  name: 'policiesDeployment-${uniqueSuffix}'
   scope: subscription() 
   params: {
-    location: location
     projectName: projectName
-    tagName: 'environment' // This matches the defaultValue in your policy
+    environment: environment
+    // We removed projectName and tagName because they aren't in the new policies.bicep
   }
 }
 
 // Outputs
 output hubVnetId string = networking.outputs.hubVnetId
 output spokeVnetId string = networking.outputs.spokeVnetId
+output firewallPrivateIpAddress string = networking.outputs.firewallPrivateIpAddress
 output logAnalyticsWorkspaceId string = deployLogAnalytics ? monitoring.outputs.logAnalyticsWorkspaceId : ''
 output keyVaultId string = security.outputs.keyVaultId
+output keyVaultName string = security.outputs.keyVaultName
 output storageAccountId string = storage.outputs.storageAccountId
 output resourceGroupName string = resourceGroup.name
 output resourceGroupId string = resourceGroup.id
+
+// Private DNS Zone IDs
+output sqlPrivateDnsZoneId string = security.outputs.sqlPrivateDnsZoneId
+output cosmosDbPrivateDnsZoneId string = security.outputs.cosmosDbPrivateDnsZoneId
+output appServicePrivateDnsZoneId string = security.outputs.appServicePrivateDnsZoneId
+
+// Private Endpoint IDs
 output storagePrivateEndpointId string = privateEndpoints.outputs.storagePrivateEndpointId
 output keyVaultPrivateEndpointId string = privateEndpoints.outputs.keyVaultPrivateEndpointId
+output sqlPrivateEndpointId string = privateEndpoints.outputs.sqlPrivateEndpointId
+output cosmosDbPrivateEndpointId string = privateEndpoints.outputs.cosmosDbPrivateEndpointId
+output appServicePrivateEndpointId string = privateEndpoints.outputs.appServicePrivateEndpointId
+
+output paasSubnetId string = networking.outputs.paasSubnetId
+output appSubnetId string = networking.outputs.appSubnetId
