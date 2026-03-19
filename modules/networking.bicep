@@ -1,12 +1,11 @@
 /*
   Networking Module - Hub and Spoke Topology
-  Deploys:
-  - Hub VNet with subnets (Firewall, Gateway, Management)
-  - Spoke VNets (Infrastructure, Application, Data, PaaS)
-  - VNet Peering
-  - Network Security Groups
-  - User Defined Routes
-  - Azure Firewall
+  
+  Naming Convention:
+  - Hub resources: {projectName}-hub-{resourceType}-{purpose}
+  - Spoke resources: {projectName}-spoke-{role}-{resourceType}
+  - Roles: infra, app, data, paas
+  - Environment managed through tags, not naming
 */
 
 param location string
@@ -16,6 +15,8 @@ param hubVnetAddressSpace string = '10.100.0.0/16'
 param spokeVnetAddressSpace string = '10.200.0.0/16'
 @description('Private IP of NVA in spoke AppSubnet (leave empty for dynamic assignment)')
 param nvaPrivateIp string = ''
+@description('Deploy Azure Firewall')
+param deployFirewall bool = false
 
 // ====== Hub Subnet Configuration ======
 var hubSubnets = [
@@ -34,26 +35,26 @@ var hubSubnets = [
   {
     name: 'BastionSubnet'
     addressPrefix: cidrSubnet(hubVnetAddressSpace, 26, 8)
-    nsgName: '${projectName}-nsg-bastion'
+    nsgName: '${projectName}-hub-nsg-bastion'
     routeTableName: ''
   }
   {
     name: 'PrivateDnsResolverSubnet'
     addressPrefix: cidrSubnet(hubVnetAddressSpace, 26, 9)
-    nsgName: '${projectName}-nsg-dnsresolver'
+    nsgName: '${projectName}-hub-nsg-dnsresolver'
     routeTableName: ''
   }
   {
     name: 'IdentitySubnet'
     addressPrefix: cidrSubnet(hubVnetAddressSpace, 26, 10)
-    nsgName: '${projectName}-nsg-identity'
-    routeTableName: '${projectName}-udr-identity'
+    nsgName: '${projectName}-hub-nsg-identity'
+    routeTableName: '${projectName}-hub-udr-identity'
   }
   {
     name: 'ManagementSubnet'
     addressPrefix: cidrSubnet(hubVnetAddressSpace, 24, 3)
-    nsgName: '${projectName}-nsg-management'
-    routeTableName: '${projectName}-udr-management'
+    nsgName: '${projectName}-hub-nsg-management'
+    routeTableName: '${projectName}-hub-udr-management'
   }
 ]
 
@@ -62,67 +63,61 @@ var spokeSubnets = [
   {
     name: 'InfraSubnet'
     addressPrefix: cidrSubnet(spokeVnetAddressSpace, 24, 0)
-    nsgName: '${projectName}-nsg-infra'
-    routeTableName: '${projectName}-udr-infra'
+    nsgName: '${projectName}-spoke-infra-nsg'
+    routeTableName: '${projectName}-spoke-infra-udr'
   }
   {
     name: 'AppSubnet'
     addressPrefix: cidrSubnet(spokeVnetAddressSpace, 24, 1)
-    nsgName: '${projectName}-nsg-app'
-    routeTableName: '${projectName}-udr-app'
+    nsgName: '${projectName}-spoke-app-nsg'
+    routeTableName: '${projectName}-spoke-app-udr'
     nvaIp: !empty(nvaPrivateIp) ? nvaPrivateIp : cidrHost(spokeVnetAddressSpace, 4)
   }
   {
     name: 'DataSubnet'
     addressPrefix: cidrSubnet(spokeVnetAddressSpace, 24, 2)
-    nsgName: '${projectName}-nsg-data'
-    routeTableName: '${projectName}-udr-data'
+    nsgName: '${projectName}-spoke-data-nsg'
+    routeTableName: '${projectName}-spoke-data-udr'
   }
   {
     name: 'PaaSSvcSubnet'
     addressPrefix: cidrSubnet(spokeVnetAddressSpace, 24, 3)
-    nsgName: '${projectName}-nsg-paas'
-    routeTableName: '${projectName}-udr-paas'
+    nsgName: '${projectName}-spoke-paas-nsg'
+    routeTableName: '${projectName}-spoke-paas-udr'
   }
 ]
 
-// Common tags for all resources
+// Common tags for all resources (environment in tags, not names)
 var commonTags = {
   environment: environment
   project: projectName
 }
 
-// ====== Compute NVA/Firewall IP - Use provided value or calculate default ======
-// When dynamic (empty), we calculate a default from the firewall subnet for UDR purposes
-// The actual firewall IP will be assigned by Azure and can be retrieved from outputs
 // ====== Dynamic IP Calculation ======
-// Azure reserves the first 3 IPs in a subnet. The 4th IP (.4) is the first available.
-// This calculates the IP based on whatever the user enters for hubVnetAddressSpace.
 var calculatedFirewallIp = cidrHost(cidrSubnet(hubVnetAddressSpace, 24, 0), 4)
-
-// Use the override if provided, otherwise use the calculated dynamic IP
 var nvaIpAddress = !empty(nvaPrivateIp) ? nvaPrivateIp : calculatedFirewallIp
+
 // ====== Application Security Groups ======
 resource infraAsg 'Microsoft.Network/applicationSecurityGroups@2023-02-01' = {
-  name: '${projectName}-asg-infra'
+  name: '${projectName}-spoke-infra-asg'
   location: location
   tags: commonTags
 }
 
 resource appAsg 'Microsoft.Network/applicationSecurityGroups@2023-02-01' = {
-  name: '${projectName}-asg-app'
+  name: '${projectName}-spoke-app-asg'
   location: location
   tags: commonTags
 }
 
 resource dataAsg 'Microsoft.Network/applicationSecurityGroups@2023-02-01' = {
-  name: '${projectName}-asg-data'
+  name: '${projectName}-spoke-data-asg'
   location: location
   tags: commonTags
 }
 
 resource paasAsg 'Microsoft.Network/applicationSecurityGroups@2023-02-01' = {
-  name: '${projectName}-asg-paas'
+  name: '${projectName}-spoke-paas-asg'
   location: location
   tags: commonTags
 }
@@ -189,15 +184,15 @@ resource hubVnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
       { name: hubSubnets[1].name, properties: { addressPrefix: hubSubnets[1].addressPrefix } }
       { name: hubSubnets[2].name, properties: { addressPrefix: hubSubnets[2].addressPrefix, networkSecurityGroup: { id: bastionNsg.id } } }
       { name: hubSubnets[3].name, properties: { addressPrefix: hubSubnets[3].addressPrefix, networkSecurityGroup: { id: dnsResolverNsg.id } } }
-      { name: hubSubnets[4].name, properties: { addressPrefix: hubSubnets[4].addressPrefix, networkSecurityGroup: { id: identityNsg.id } } }
-      { name: hubSubnets[5].name, properties: { addressPrefix: hubSubnets[5].addressPrefix, networkSecurityGroup: { id: hubManagementNsg.id } } }
+      { name: hubSubnets[4].name, properties: { addressPrefix: hubSubnets[4].addressPrefix, networkSecurityGroup: { id: identityNsg.id }, routeTable: deployFirewall ? { id: identityUdr.id } : null } }
+      { name: hubSubnets[5].name, properties: { addressPrefix: hubSubnets[5].addressPrefix, networkSecurityGroup: { id: hubManagementNsg.id }, routeTable: deployFirewall ? { id: managementUdr.id } : null } }
     ]
   }
 }
 
 // ====== Azure Firewall Public IP ======
-resource firewallPip 'Microsoft.Network/publicIPAddresses@2023-02-01' = {
-  name: '${projectName}-azure-fw-pip'
+resource firewallPip 'Microsoft.Network/publicIPAddresses@2023-02-01' = if(deployFirewall) {
+  name: '${projectName}-hub-fw-pip'
   location: location
   tags: commonTags
   sku: { name: 'Standard' }
@@ -207,9 +202,9 @@ resource firewallPip 'Microsoft.Network/publicIPAddresses@2023-02-01' = {
   }
 }
 
-// ====== Azure Firewall (Dynamic IP) ======
-resource azureFirewall 'Microsoft.Network/azureFirewalls@2023-02-01' = {
-  name: '${projectName}-azure-fw'
+// ====== Azure Firewall ======
+resource azureFirewall 'Microsoft.Network/azureFirewalls@2023-02-01' = if(deployFirewall) {
+  name: '${projectName}-hub-azure-fw'
   location: location
   tags: commonTags
   properties: {
@@ -220,21 +215,17 @@ resource azureFirewall 'Microsoft.Network/azureFirewalls@2023-02-01' = {
         properties: {
           subnet: { id: '${hubVnet.id}/subnets/AzureFirewallSubnet' }
           publicIPAddress: { id: firewallPip.id }
-          // privateIPAddress is dynamically assigned by Azure when not specified
         }
       }
     ]
   }
 }
 
-// ====== User Defined Routes (Hub & Spoke) ======
-// Note: Using Azure Firewall's dynamically assigned IP will be retrieved after deployment
-// For UDRs, we'll use a placeholder that gets updated or reference the firewall resource
+// ====== User Defined Routes (Hub) ======
 resource identityUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   name: hubSubnets[4].routeTableName
   location: location
   tags: commonTags
-  dependsOn: [ hubVnet ]
   properties: {
     routes: [
       {
@@ -253,7 +244,6 @@ resource managementUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   name: hubSubnets[5].routeTableName
   location: location
   tags: commonTags
-  dependsOn: [ hubVnet ]
   properties: {
     routes: [
       {
@@ -268,6 +258,7 @@ resource managementUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   }
 }
 
+// ====== User Defined Routes (Spoke - Infra) ======
 resource infraUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   name: spokeSubnets[0].routeTableName
   location: location
@@ -280,15 +271,14 @@ resource infraUdr 'Microsoft.Network/routeTables@2023-02-01' = {
         properties: {
           addressPrefix: '0.0.0.0/0'
           nextHopType: 'VirtualAppliance'
-          // This pulls the IP dynamically from the firewall we just created
-          nextHopIpAddress: azureFirewall.properties.ipConfigurations[0].properties.privateIPAddress
+          nextHopIpAddress: nvaIpAddress
         }
       }
     ]
   }
 }
 
-
+// ====== User Defined Routes (Spoke - App) ======
 resource appUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   name: spokeSubnets[1].routeTableName
   location: location
@@ -298,7 +288,7 @@ resource appUdr 'Microsoft.Network/routeTables@2023-02-01' = {
     disableBgpRoutePropagation: true
     routes: [
       {
-        name: 'ToFirewall'
+        name: 'DefaultRouteToFirewall'
         properties: {
           addressPrefix: '0.0.0.0/0'
           nextHopType: 'VirtualAppliance'
@@ -309,6 +299,7 @@ resource appUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   }
 }
 
+// ====== User Defined Routes (Spoke - Data) ======
 resource dataUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   name: spokeSubnets[2].routeTableName
   location: location
@@ -318,7 +309,7 @@ resource dataUdr 'Microsoft.Network/routeTables@2023-02-01' = {
     disableBgpRoutePropagation: true
     routes: [
       {
-        name: 'ToFirewall'
+        name: 'DefaultRouteToFirewall'
         properties: {
           addressPrefix: '0.0.0.0/0'
           nextHopType: 'VirtualAppliance'
@@ -329,6 +320,7 @@ resource dataUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   }
 }
 
+// ====== User Defined Routes (Spoke - PaaS) ======
 resource paasUdr 'Microsoft.Network/routeTables@2023-02-01' = {
   name: spokeSubnets[3].routeTableName
   location: location
@@ -338,7 +330,7 @@ resource paasUdr 'Microsoft.Network/routeTables@2023-02-01' = {
     disableBgpRoutePropagation: true
     routes: [
       {
-        name: 'ToFirewall'
+        name: 'DefaultRouteToFirewall'
         properties: {
           addressPrefix: '0.0.0.0/0'
           nextHopType: 'VirtualAppliance'
@@ -351,9 +343,9 @@ resource paasUdr 'Microsoft.Network/routeTables@2023-02-01' = {
 
 // ====== Spoke VNet ======
 resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
-  name: '${projectName}-spoke-vnet'
+  name: '${projectName}-spoke-infra-vnet'
   location: location
-  tags: union(commonTags, { role: 'spoke' })
+  tags: union(commonTags, { role: 'spoke', function: 'infrastructure' })
   properties: {
     addressSpace: { addressPrefixes: [ spokeVnetAddressSpace ] }
     subnets: [
@@ -362,7 +354,7 @@ resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
         properties: {
           addressPrefix: spokeSubnets[0].addressPrefix
           networkSecurityGroup: { id: infraNsg.id }
-          routeTable: { id: infraUdr.id }
+          routeTable: deployFirewall ? { id: infraUdr.id } : null
         }
       }
       {
@@ -370,7 +362,7 @@ resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
         properties: {
           addressPrefix: spokeSubnets[1].addressPrefix
           networkSecurityGroup: { id: appNsg.id }
-          routeTable: { id: appUdr.id }
+          routeTable: deployFirewall ? { id: appUdr.id } : null
         }
       }
       {
@@ -378,7 +370,7 @@ resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
         properties: {
           addressPrefix: spokeSubnets[2].addressPrefix
           networkSecurityGroup: { id: dataNsg.id }
-          routeTable: { id: dataUdr.id }
+          routeTable: deployFirewall ? { id: dataUdr.id } : null
         }
       }
       {
@@ -386,7 +378,7 @@ resource spokeVnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
         properties: {
           addressPrefix: spokeSubnets[3].addressPrefix
           networkSecurityGroup: { id: paasNsg.id }
-          routeTable: { id: paasUdr.id }
+          routeTable: deployFirewall ? { id: paasUdr.id } : null
         }
       }
     ]
@@ -421,8 +413,8 @@ resource spokeToHubPeering 'Microsoft.Network/virtualNetworks/virtualNetworkPeer
 // ====== Outputs ======
 output hubVnetId string = hubVnet.id
 output spokeVnetId string = spokeVnet.id
-output firewallId string = azureFirewall.id
-output firewallPrivateIpAddress string = azureFirewall.properties.ipConfigurations[0].properties.privateIPAddress
+output firewallId string = deployFirewall ? azureFirewall.id : ''
+output firewallPrivateIpAddress string = deployFirewall ? azureFirewall.properties.ipConfigurations[0].properties.privateIPAddress : ''
 output infraAsgId string = infraAsg.id
 output appAsgId string = appAsg.id
 output dataAsgId string = dataAsg.id

@@ -9,7 +9,7 @@
       "value": "production"
     },
     "projectName": {
-      "value": "sinet-lz-final"
+      "value": "client-lz"
     },
     "hubVnetAddressSpace": {
       "value": "10.100.0.0/16"
@@ -23,14 +23,14 @@
     "deployLogAnalytics": {
       "value": true
     },
-    "deployPrivateDns": {
-      "value": true
-    },
     "deployAzurePolicies": {
-      "value": true
+      "value": false
     },
     "alertEmailAddress": {
       "value": "alerts@contoso.com"
+    },
+    "deployFirewall": {
+      "value": false
     }
   }
 }

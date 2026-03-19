@@ -1,5 +1,12 @@
 /*
   Monitoring Module - Log Analytics Workspace and Action Group
+  
+  Naming Convention:
+  - Log Analytics: {projectName}-hub-law
+  - Action Group: {projectName}-hub-ag
+  
+  - Includes 'hub' to indicate centralized deployment in Hub network
+  - Environment managed through tags, not naming
 */
 
 param location string
@@ -9,13 +16,14 @@ param environment string
 @description('Alert email address for action group (leave empty to skip action group creation)')
 param alertEmailAddress string = ''
 
-// Common tags
+// Common tags (environment in tags, not names)
 var commonTags = {
   environment: environment
   project: projectName
 }
 
 // Log Analytics Workspace
+// Naming: {projectName}-hub-law
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-12-01-preview' = {
   name: logAnalyticsName
   location: location
@@ -29,8 +37,9 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2021-12-01-previ
 }
 
 // Action Group for alerts (only create if email provided)
+// Naming: {projectName}-hub-ag
 resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if(!empty(alertEmailAddress)) {
-  name: '${projectName}-ag-${location}'
+  name: '${projectName}-hub-ag'
   location: 'global'
   tags: commonTags
   properties: {

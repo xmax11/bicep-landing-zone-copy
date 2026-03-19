@@ -26,14 +26,14 @@ param nvaPrivateIp string = ''
 @description('Deploy Log Analytics Workspace')
 param deployLogAnalytics bool = true
 
-@description('Deploy Private DNS Zones')
-param deployPrivateDns bool = true
-
 @description('Deploy Azure Policies')
 param deployAzurePolicies bool = true
 
 @description('Alert email address for action group')
 param alertEmailAddress string = 'alerts@contoso.com'
+
+@description('Deploy Azure Firewall')
+param deployFirewall bool = false
 
 // Generate unique suffix for naming
 var uniqueSuffix = take(uniqueString(subscription().id, location), 8)
@@ -64,6 +64,7 @@ module networking 'modules/networking.bicep' = {
     hubVnetAddressSpace: hubVnetAddressSpace
     spokeVnetAddressSpace: spokeVnetAddressSpace
     nvaPrivateIp: nvaPrivateIp
+    deployFirewall: deployFirewall
   }
 }
 
@@ -80,7 +81,7 @@ module monitoring 'modules/monitoring.bicep' = if(deployLogAnalytics) {
   }
 }
 
-// Deploy Security (Key Vault, Private DNS Zones)
+// Deploy Security (Key Vault only - DNS Zones are now centralized)
 module security 'modules/security.bicep' = {
   name: 'securityDeployment'
   scope: resourceGroup
@@ -89,7 +90,6 @@ module security 'modules/security.bicep' = {
     keyVaultName: keyVaultName
     projectName: projectName
     environment: environment
-    deployPrivateDns: deployPrivateDns
     logAnalyticsWorkspaceId: deployLogAnalytics ? monitoring.outputs.logAnalyticsWorkspaceId : ''
     hubVnetId: networking.outputs.hubVnetId
     spokeVnetId: networking.outputs.spokeVnetId
@@ -109,7 +109,22 @@ module storage 'modules/storage.bicep' = {
   }
 }
 
+// Deploy Private DNS Zones (Centralized in Hub)
+// These zones are created in the Hub resource group and linked to both Hub and Spoke VNets
+module privateDnsZones 'modules/private-dns-zones.bicep' = {
+  name: 'privateDnsZonesDeployment'
+  scope: resourceGroup
+  params: {
+    location: location
+    projectName: projectName
+    environment: environment
+    hubVnetId: networking.outputs.hubVnetId
+    spokeVnetId: networking.outputs.spokeVnetId
+  }
+}
+
 // Deploy Private Endpoints for Storage and Key Vault (no VMs/SQL/App Services)
+// Uses centralized DNS Zone IDs from private-dns-zones module
 module privateEndpoints 'modules/private-endpoints.bicep' = {
   name: 'privateEndpointsDeployment'
   scope: resourceGroup
@@ -123,11 +138,11 @@ module privateEndpoints 'modules/private-endpoints.bicep' = {
     cosmosDbAccountId: ''
     appServiceId: ''
     paasSubnetId: networking.outputs.paasSubnetId
-    storagePrivateDnsZoneId: security.outputs.storagePrivateDnsZoneId
-    keyVaultPrivateDnsZoneId: security.outputs.keyVaultPrivateDnsZoneId
-    sqlPrivateDnsZoneId: security.outputs.sqlPrivateDnsZoneId
-    appServicePrivateDnsZoneId: security.outputs.appServicePrivateDnsZoneId
-    cosmosDbPrivateDnsZoneId: security.outputs.cosmosDbPrivateDnsZoneId
+    storagePrivateDnsZoneId: privateDnsZones.outputs.storagePrivateDnsZoneId
+    keyVaultPrivateDnsZoneId: privateDnsZones.outputs.keyVaultPrivateDnsZoneId
+    sqlPrivateDnsZoneId: privateDnsZones.outputs.sqlPrivateDnsZoneId
+    appServicePrivateDnsZoneId: privateDnsZones.outputs.appServicePrivateDnsZoneId
+    cosmosDbPrivateDnsZoneId: privateDnsZones.outputs.cosmosDbPrivateDnsZoneId
   }
 }
 
@@ -145,7 +160,7 @@ module policies 'modules/policies.bicep' = if(deployAzurePolicies) {
 // Outputs
 output hubVnetId string = networking.outputs.hubVnetId
 output spokeVnetId string = networking.outputs.spokeVnetId
-output firewallPrivateIpAddress string = networking.outputs.firewallPrivateIpAddress
+output firewallPrivateIpAddress string = deployFirewall ? networking.outputs.firewallPrivateIpAddress : ''
 output logAnalyticsWorkspaceId string = deployLogAnalytics ? monitoring.outputs.logAnalyticsWorkspaceId : ''
 output keyVaultId string = security.outputs.keyVaultId
 output keyVaultName string = security.outputs.keyVaultName
@@ -153,10 +168,14 @@ output storageAccountId string = storage.outputs.storageAccountId
 output resourceGroupName string = resourceGroup.name
 output resourceGroupId string = resourceGroup.id
 
-// Private DNS Zone IDs
-output sqlPrivateDnsZoneId string = security.outputs.sqlPrivateDnsZoneId
-output cosmosDbPrivateDnsZoneId string = security.outputs.cosmosDbPrivateDnsZoneId
-output appServicePrivateDnsZoneId string = security.outputs.appServicePrivateDnsZoneId
+// Private DNS Zone IDs (from centralized private-dns-zones module)
+output storagePrivateDnsZoneId string = privateDnsZones.outputs.storagePrivateDnsZoneId
+output keyVaultPrivateDnsZoneId string = privateDnsZones.outputs.keyVaultPrivateDnsZoneId
+output sqlPrivateDnsZoneId string = privateDnsZones.outputs.sqlPrivateDnsZoneId
+output cosmosDbPrivateDnsZoneId string = privateDnsZones.outputs.cosmosDbPrivateDnsZoneId
+output appServicePrivateDnsZoneId string = privateDnsZones.outputs.appServicePrivateDnsZoneId
+output filePrivateDnsZoneId string = privateDnsZones.outputs.filePrivateDnsZoneId
+output webPrivateDnsZoneId string = privateDnsZones.outputs.webPrivateDnsZoneId
 
 // Private Endpoint IDs
 output storagePrivateEndpointId string = privateEndpoints.outputs.storagePrivateEndpointId

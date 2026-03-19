@@ -1,5 +1,11 @@
 /*
   Private Endpoints Module - Creates private endpoints for Storage, Key Vault, SQL, Cosmos DB, and App Service
+  
+  Naming Convention: {projectName}-spoke-pe-{service}
+  - Includes 'spoke' to indicate deployment in Spoke VNet
+  - Includes target service name (storage, keyvault, sql, cosmosdb, appservice)
+  - Environment managed through tags, not naming
+  
   Note: SQL, Cosmos DB, and App Service private endpoints are conditional - they only deploy if valid resource IDs are provided
 */
 
@@ -24,7 +30,7 @@ param sqlPrivateDnsZoneId string = ''
 param appServicePrivateDnsZoneId string = ''
 param cosmosDbPrivateDnsZoneId string = ''
 
-// Common tags
+// Common tags (environment in tags, not names)
 var commonTags = {
   environment: environment
   project: projectName
@@ -36,8 +42,9 @@ var cosmosEnabled = !empty(cosmosDbAccountId)
 var appServiceEnabled = !empty(appServiceId)
 
 // ====== Storage Account Private Endpoint ======
+// Naming: {projectName}-spoke-pe-storage
 resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = {
-  name: '${projectName}-st-pe'
+  name: '${projectName}-spoke-pe-storage'
   location: location
   tags: commonTags
   properties: {
@@ -58,7 +65,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' 
 
 // DNS Zone Group for Storage
 resource storageDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = {
-  name: 'storage-dns-zone-group'
+  name: 'spoke-storage-dns-group'
   parent: storagePrivateEndpoint
   properties: {
     privateDnsZoneConfigs: [
@@ -73,8 +80,9 @@ resource storageDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneG
 }
 
 // ====== Key Vault Private Endpoint ======
+// Naming: {projectName}-spoke-pe-keyvault
 resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = {
-  name: '${projectName}-kv-pe'
+  name: '${projectName}-spoke-pe-keyvault'
   location: location
   tags: commonTags
   properties: {
@@ -83,7 +91,7 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01'
     }
     privateLinkServiceConnections: [
       {
-        name: 'kv-connection'
+        name: 'keyvault-connection'
         properties: {
           privateLinkServiceId: keyVaultId
           groupIds: [ 'vault' ]
@@ -95,12 +103,12 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01'
 
 // DNS Zone Group for Key Vault
 resource keyVaultDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = {
-  name: 'kv-dns-zone-group'
+  name: 'spoke-keyvault-dns-group'
   parent: keyVaultPrivateEndpoint
   properties: {
     privateDnsZoneConfigs: [
       {
-        name: 'kv-dns-config'
+        name: 'keyvault-dns-config'
         properties: {
           privateDnsZoneId: keyVaultPrivateDnsZoneId
         }
@@ -110,8 +118,9 @@ resource keyVaultDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZone
 }
 
 // ====== SQL Server Private Endpoint (Conditional) ======
+// Naming: {projectName}-spoke-pe-sql
 resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = if(sqlEnabled) {
-  name: '${projectName}-sql-pe'
+  name: '${projectName}-spoke-pe-sql'
   location: location
   tags: commonTags
   properties: {
@@ -132,7 +141,7 @@ resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = if
 
 // DNS Zone Group for SQL
 resource sqlDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = if(sqlEnabled) {
-  name: 'sql-dns-zone-group'
+  name: 'spoke-sql-dns-group'
   parent: sqlPrivateEndpoint
   properties: {
     privateDnsZoneConfigs: [
@@ -147,8 +156,9 @@ resource sqlDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroup
 }
 
 // ====== Cosmos DB Private Endpoint (Conditional) ======
+// Naming: {projectName}-spoke-pe-cosmosdb
 resource cosmosDbPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = if(cosmosEnabled) {
-  name: '${projectName}-cosmosdb-pe'
+  name: '${projectName}-spoke-pe-cosmosdb'
   location: location
   tags: commonTags
   properties: {
@@ -169,7 +179,7 @@ resource cosmosDbPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01'
 
 // DNS Zone Group for Cosmos DB
 resource cosmosDbDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = if(cosmosEnabled) {
-  name: 'cosmosdb-dns-zone-group'
+  name: 'spoke-cosmosdb-dns-group'
   parent: cosmosDbPrivateEndpoint
   properties: {
     privateDnsZoneConfigs: [
@@ -184,8 +194,9 @@ resource cosmosDbDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZone
 }
 
 // ====== App Service Private Endpoint (Conditional) ======
+// Naming: {projectName}-spoke-pe-appservice
 resource appServicePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = if(appServiceEnabled) {
-  name: '${projectName}-appservice-pe'
+  name: '${projectName}-spoke-pe-appservice'
   location: location
   tags: commonTags
   properties: {
@@ -206,7 +217,7 @@ resource appServicePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-0
 
 // DNS Zone Group for App Service
 resource appServiceDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = if(appServiceEnabled) {
-  name: 'appservice-dns-zone-group'
+  name: 'spoke-appservice-dns-group'
   parent: appServicePrivateEndpoint
   properties: {
     privateDnsZoneConfigs: [

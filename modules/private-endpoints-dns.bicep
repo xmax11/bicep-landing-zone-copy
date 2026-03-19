@@ -1,8 +1,13 @@
 /*
-  Dynamic Private Endpoints and DNS Configuration Module
+  Private Endpoints with DNS Configuration Module
   
-  This module creates/manages Private DNS Zones and links them to existing VNets,
-  then configures private endpoints with automatic DNS registration.
+  Naming Convention: {projectName}-spoke-pe-{service}
+  - Includes 'spoke' to indicate deployment in Spoke VNet
+  - Includes target service name
+  - Environment managed through tags, not naming
+  
+  IMPORTANT: This module consumes existing Private DNS Zones as parameters.
+  Private DNS Zones are created centrally in the Hub using the private-dns-zones module.
 */
 
 targetScope = 'resourceGroup'
@@ -25,11 +30,30 @@ param hubVnetName string = 'sinet-hub-spoke-hub-vnet'
 
 @description('Spoke VNet names array')
 param spokeVnetNames array = [
-  'sinet-hub-spoke-spoke-vnet'
+  'sinet-hub-spoke-spoke-infra-vnet'
 ]
 
 @description('Subscription ID for VNet references')
 param subscriptionId string = subscription().id
+
+// ============================================
+// DNS ZONE IDs (Existing - from centralized private-dns-zones module)
+// ============================================
+
+@description('Existing Storage Private DNS Zone ID')
+param storageDnsZoneId string
+
+@description('Existing Key Vault Private DNS Zone ID')
+param keyVaultDnsZoneId string
+
+@description('Existing SQL Private DNS Zone ID')
+param sqlDnsZoneId string = ''
+
+@description('Existing App Service Private DNS Zone ID')
+param appServiceDnsZoneId string = ''
+
+@description('Existing Cosmos DB Private DNS Zone ID')
+param cosmosDbDnsZoneId string = ''
 
 // ============================================
 // SERVICE CONFIGURATION
@@ -95,7 +119,7 @@ param privateEndpoints array = [
 ]
 
 // ============================================
-// GET VNET IDS
+// GET VNET REFERENCES
 // ============================================
 
 resource hubVnet 'Microsoft.Network/virtualNetworks@2023-02-01' existing = {
@@ -109,110 +133,14 @@ resource spokeVnet1 'Microsoft.Network/virtualNetworks@2023-02-01' existing = if
 }
 
 // ============================================
-// PRIVATE DNS ZONES
-// ============================================
-
-resource keyVaultDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
-  name: serviceConfigs.keyVault.dnsZoneName
-  location: 'global'
-  tags: { environment: environment, project: projectName }
-}
-
-resource storageDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
-  name: serviceConfigs.storage.dnsZoneName
-  location: 'global'
-  tags: { environment: environment, project: projectName }
-}
-
-resource sqlDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
-  name: serviceConfigs.sql.dnsZoneName
-  location: 'global'
-  tags: { environment: environment, project: projectName }
-}
-
-resource appServiceDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
-  name: serviceConfigs.appService.dnsZoneName
-  location: 'global'
-  tags: { environment: environment, project: projectName }
-}
-
-resource cosmosDbDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
-  name: serviceConfigs.cosmosDb.dnsZoneName
-  location: 'global'
-  tags: { environment: environment, project: projectName }
-}
-
-// ============================================
-// VNET LINKS FOR DNS ZONES
-// ============================================
-
-// Key Vault Links
-resource keyVaultDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
-  parent: keyVaultDnsZone
-  name: '${projectName}-keyvault-hub-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: hubVnet.id } }
-}
-
-resource keyVaultDnsSpoke1Link 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(length(spokeVnetNames) > 0) {
-  parent: keyVaultDnsZone
-  name: '${projectName}-keyvault-spoke1-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: spokeVnet1.id } }
-}
-
-// Storage Links
-resource storageDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
-  parent: storageDnsZone
-  name: '${projectName}-storage-hub-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: hubVnet.id } }
-}
-
-resource storageDnsSpoke1Link 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(length(spokeVnetNames) > 0) {
-  parent: storageDnsZone
-  name: '${projectName}-storage-spoke1-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: spokeVnet1.id } }
-}
-
-// SQL Links
-resource sqlDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
-  parent: sqlDnsZone
-  name: '${projectName}-sql-hub-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: hubVnet.id } }
-}
-
-resource sqlDnsSpoke1Link 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(length(spokeVnetNames) > 0) {
-  parent: sqlDnsZone
-  name: '${projectName}-sql-spoke1-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: spokeVnet1.id } }
-}
-
-// App Service Links
-resource appServiceDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
-  parent: appServiceDnsZone
-  name: '${projectName}-appservice-hub-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: hubVnet.id } }
-}
-
-resource appServiceDnsSpoke1Link 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(length(spokeVnetNames) > 0) {
-  parent: appServiceDnsZone
-  name: '${projectName}-appservice-spoke1-link'
-  location: 'global'
-  properties: { registrationEnabled: false, virtualNetwork: { id: spokeVnet1.id } }
-}
-
-// ============================================
 // PRIVATE ENDPOINTS CREATION
+// Naming: {projectName}-spoke-pe-{service}
 // ============================================
 
-// Key Vault
+// Key Vault Private Endpoint
+// Naming: {projectName}-spoke-pe-keyvault
 resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = {
-  name: 'pe-${projectName}-keyvault'
+  name: '${projectName}-spoke-pe-keyvault'
   location: location
   tags: { environment: environment, project: projectName }
   properties: {
@@ -229,19 +157,20 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01'
   }
 }
 
-resource keyVaultDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = {
+resource keyVaultDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = if(!empty(keyVaultDnsZoneId)) {
   parent: keyVaultPrivateEndpoint
-  name: 'keyvault-dns-zone-group'
+  name: 'spoke-keyvault-dns-group'
   properties: {
     privateDnsZoneConfigs: [
-      { name: 'keyvault-dns-config', properties: { privateDnsZoneId: keyVaultDnsZone.id } }
+      { name: 'keyvault-dns-config', properties: { privateDnsZoneId: keyVaultDnsZoneId } }
     ]
   }
 }
 
-// Storage
+// Storage Private Endpoint
+// Naming: {projectName}-spoke-pe-storage
 resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = {
-  name: 'pe-${projectName}-storage'
+  name: '${projectName}-spoke-pe-storage'
   location: location
   tags: { environment: environment, project: projectName }
   properties: {
@@ -258,19 +187,22 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' 
   }
 }
 
-resource storageDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = {
+resource storageDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = if(!empty(storageDnsZoneId)) {
   parent: storagePrivateEndpoint
-  name: 'storage-dns-zone-group'
+  name: 'spoke-storage-dns-group'
   properties: {
     privateDnsZoneConfigs: [
-      { name: 'storage-dns-config', properties: { privateDnsZoneId: storageDnsZone.id } }
+      { name: 'storage-dns-config', properties: { privateDnsZoneId: storageDnsZoneId } }
     ]
   }
 }
 
-// SQL
-resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = {
-  name: 'pe-${projectName}-sql'
+// SQL Private Endpoint (Conditional)
+// Naming: {projectName}-spoke-pe-sql
+var sqlEnabled = !empty(sqlDnsZoneId)
+
+resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = if(sqlEnabled) {
+  name: '${projectName}-spoke-pe-sql'
   location: location
   tags: { environment: environment, project: projectName }
   properties: {
@@ -287,19 +219,22 @@ resource sqlPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = {
   }
 }
 
-resource sqlDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = {
+resource sqlDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = if(sqlEnabled) {
   parent: sqlPrivateEndpoint
-  name: 'sql-dns-zone-group'
+  name: 'spoke-sql-dns-group'
   properties: {
     privateDnsZoneConfigs: [
-      { name: 'sql-dns-config', properties: { privateDnsZoneId: sqlDnsZone.id } }
+      { name: 'sql-dns-config', properties: { privateDnsZoneId: sqlDnsZoneId } }
     ]
   }
 }
 
-// App Service
-resource appServicePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = {
-  name: 'pe-${projectName}-appservice'
+// App Service Private Endpoint (Conditional)
+// Naming: {projectName}-spoke-pe-appservice
+var appServiceEnabled = !empty(appServiceDnsZoneId)
+
+resource appServicePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-01' = if(appServiceEnabled) {
+  name: '${projectName}-spoke-pe-appservice'
   location: location
   tags: { environment: environment, project: projectName }
   properties: {
@@ -316,12 +251,12 @@ resource appServicePrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-02-0
   }
 }
 
-resource appServiceDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = {
+resource appServiceDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-02-01' = if(appServiceEnabled) {
   parent: appServicePrivateEndpoint
-  name: 'appservice-dns-zone-group'
+  name: 'spoke-appservice-dns-group'
   properties: {
     privateDnsZoneConfigs: [
-      { name: 'appservice-dns-config', properties: { privateDnsZoneId: appServiceDnsZone.id } }
+      { name: 'appservice-dns-config', properties: { privateDnsZoneId: appServiceDnsZoneId } }
     ]
   }
 }
@@ -336,44 +271,36 @@ output privateEndpointSummary array = [
     privateEndpointName: keyVaultPrivateEndpoint.name
     privateEndpointId: keyVaultPrivateEndpoint.id
     dnsZoneName: serviceConfigs.keyVault.dnsZoneName
-    dnsZoneId: keyVaultDnsZone.id
-    hubVnetLinkId: keyVaultDnsHubLink.id
-    spokeVnetLinkId: length(spokeVnetNames) > 0 ? keyVaultDnsSpoke1Link.id : ''
+    dnsZoneId: keyVaultDnsZoneId
   }
   {
     serviceName: 'Storage'
     privateEndpointName: storagePrivateEndpoint.name
     privateEndpointId: storagePrivateEndpoint.id
     dnsZoneName: serviceConfigs.storage.dnsZoneName
-    dnsZoneId: storageDnsZone.id
-    hubVnetLinkId: storageDnsHubLink.id
-    spokeVnetLinkId: length(spokeVnetNames) > 0 ? storageDnsSpoke1Link.id : ''
+    dnsZoneId: storageDnsZoneId
   }
   {
     serviceName: 'SQL Server'
-    privateEndpointName: sqlPrivateEndpoint.name
-    privateEndpointId: sqlPrivateEndpoint.id
+    privateEndpointName: sqlEnabled ? sqlPrivateEndpoint.name : ''
+    privateEndpointId: sqlEnabled ? sqlPrivateEndpoint.id : ''
     dnsZoneName: serviceConfigs.sql.dnsZoneName
-    dnsZoneId: sqlDnsZone.id
-    hubVnetLinkId: sqlDnsHubLink.id
-    spokeVnetLinkId: length(spokeVnetNames) > 0 ? sqlDnsSpoke1Link.id : ''
+    dnsZoneId: sqlDnsZoneId
   }
   {
     serviceName: 'App Service'
-    privateEndpointName: appServicePrivateEndpoint.name
-    privateEndpointId: appServicePrivateEndpoint.id
+    privateEndpointName: appServiceEnabled ? appServicePrivateEndpoint.name : ''
+    privateEndpointId: appServiceEnabled ? appServicePrivateEndpoint.id : ''
     dnsZoneName: serviceConfigs.appService.dnsZoneName
-    dnsZoneId: appServiceDnsZone.id
-    hubVnetLinkId: appServiceDnsHubLink.id
-    spokeVnetLinkId: length(spokeVnetNames) > 0 ? appServiceDnsSpoke1Link.id : ''
+    dnsZoneId: appServiceDnsZoneId
   }
 ]
 
 output hubVnetId string = hubVnet.id
 output dnsZoneIds object = {
-  keyVault: keyVaultDnsZone.id
-  storage: storageDnsZone.id
-  sql: sqlDnsZone.id
-  appService: appServiceDnsZone.id
-  cosmosDb: cosmosDbDnsZone.id
+  keyVault: keyVaultDnsZoneId
+  storage: storageDnsZoneId
+  sql: sqlDnsZoneId
+  appService: appServiceDnsZoneId
+  cosmosDb: cosmosDbDnsZoneId
 }

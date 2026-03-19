@@ -1,5 +1,11 @@
 /*
   Storage Module - Storage Account
+  
+  Naming Convention: {projectName}-spoke-st
+  - Storage Account is accessed via Private Endpoints in Spoke VNet
+  - Includes 'spoke' to indicate deployment in Spoke network
+  - Environment managed through tags, not naming
+  
   Deploys:
   - Storage Account (LRS)
   - Blob Container
@@ -11,12 +17,14 @@ param projectName string
 param environment string
 param logAnalyticsWorkspaceId string = ''
 
-// Common tags
+// Common tags (environment in tags, not names)
 var commonTags = {
   environment: environment
   project: projectName
 }
 
+// Storage Account
+// Naming: {projectName}-spoke-st
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
@@ -70,8 +78,9 @@ resource diagnosticsContainer 'Microsoft.Storage/storageAccounts/blobServices/co
 }
 
 // Diagnostic settings
+// Naming: {projectName}-spoke-st-diag
 resource storageDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if(logAnalyticsWorkspaceId != '') {
-  name: '${projectName}-st-diag'
+  name: '${projectName}-spoke-st-diag'
   scope: blobService
   properties: {
     workspaceId: logAnalyticsWorkspaceId

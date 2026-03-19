@@ -1,23 +1,31 @@
 /*
-  Security Module - Key Vault and Private DNS Zones
+  Security Module - Key Vault
+  
+  Naming Convention: {projectName}-spoke-kv
+  - Key Vault is accessed via Private Endpoints in Spoke VNet
+  - Includes 'spoke' to indicate deployment in Spoke network
+  - Environment managed through tags, not naming
+  
+  Note: Private DNS Zones are now centralized in the Hub (private-dns-zones module)
+  and are no longer created here.
 */
 
 param location string
 param keyVaultName string
 param projectName string
 param environment string
-param deployPrivateDns bool = true
 param logAnalyticsWorkspaceId string = ''
 param hubVnetId string
 param spokeVnetId string
 
-// Common tags
+// Common tags (environment in tags, not names)
 var commonTags = {
   environment: environment
   project: projectName
 }
 
 // Key Vault - RBAC enabled, deployer needs Key Vault Contributor role
+// Naming: {projectName}-spoke-kv (Key Vault accessed via Private Endpoint in Spoke)
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
   name: keyVaultName
   location: location
@@ -33,159 +41,14 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
     enabledForDiskEncryption: true
     enabledForTemplateDeployment: true
     enablePurgeProtection: true
-    enableRbacAuthorization: true  // Use RBAC for authorization
+    enableRbacAuthorization: true
     softDeleteRetentionInDays: 7
-  }
-}
-// Private DNS Zones
-resource storagePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
-  name: 'privatelink.blob.core.windows.net'
-  location: 'global'
-  tags: commonTags
-}
-
-resource keyVaultPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
-  name: 'privatelink.vaultcore.azure.net'
-  location: 'global'
-  tags: commonTags
-}
-
-resource sqlPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
-  name: 'privatelink.database.windows.net'
-  location: 'global'
-  tags: commonTags
-}
-
-resource appServicePrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
-  name: 'privatelink.azurewebsites.net'
-  location: 'global'
-  tags: commonTags
-}
-
-resource cosmosDbPrivateDns 'Microsoft.Network/privateDnsZones@2020-06-01' = if(deployPrivateDns) {
-  name: 'privatelink.documents.azure.com'
-  location: 'global'
-  tags: commonTags
-}
-
-// VNet links for Storage DNS zone
-resource storagePrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: storagePrivateDns
-  name: '${projectName}-storage-hub-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: hubVnetId }
-  }
-}
-
-resource storagePrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: storagePrivateDns
-  name: '${projectName}-storage-spoke-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: spokeVnetId }
-  }
-}
-
-// VNet links for Key Vault DNS zone
-resource keyVaultPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: keyVaultPrivateDns
-  name: '${projectName}-keyvault-hub-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: hubVnetId }
-  }
-}
-
-resource keyVaultPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: keyVaultPrivateDns
-  name: '${projectName}-keyvault-spoke-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: spokeVnetId }
-  }
-}
-
-// VNet links for SQL DNS zone
-resource sqlPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: sqlPrivateDns
-  name: '${projectName}-sql-hub-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: hubVnetId }
-  }
-}
-
-resource sqlPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: sqlPrivateDns
-  name: '${projectName}-sql-spoke-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: spokeVnetId }
-  }
-}
-
-// VNet links for App Service DNS zone
-resource appServicePrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: appServicePrivateDns
-  name: '${projectName}-appservice-hub-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: hubVnetId }
-  }
-}
-
-resource appServicePrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: appServicePrivateDns
-  name: '${projectName}-appservice-spoke-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: spokeVnetId }
-  }
-}
-
-// VNet links for Cosmos DB DNS zone
-resource cosmosDbPrivateDnsHubLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: cosmosDbPrivateDns
-  name: '${projectName}-cosmosdb-hub-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: hubVnetId }
-  }
-}
-
-resource cosmosDbPrivateDnsSpokeLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if(deployPrivateDns) {
-  parent: cosmosDbPrivateDns
-  name: '${projectName}-cosmosdb-spoke-link'
-  location: 'global'
-  tags: commonTags
-  properties: {
-    registrationEnabled: false
-    virtualNetwork: { id: spokeVnetId }
   }
 }
 
 // Diagnostic settings for Key Vault
 resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if(logAnalyticsWorkspaceId != '') {
-  name: '${projectName}-kv-diag'
+  name: '${projectName}-spoke-kv-diag'
   scope: keyVault
   properties: {
     workspaceId: logAnalyticsWorkspaceId
@@ -208,8 +71,3 @@ resource keyVaultDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-p
 output keyVaultId string = keyVault.id
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri
-output storagePrivateDnsZoneId string = deployPrivateDns ? storagePrivateDns.id : ''
-output keyVaultPrivateDnsZoneId string = deployPrivateDns ? keyVaultPrivateDns.id : ''
-output sqlPrivateDnsZoneId string = deployPrivateDns ? sqlPrivateDns.id : ''
-output appServicePrivateDnsZoneId string = deployPrivateDns ? appServicePrivateDns.id : ''
-output cosmosDbPrivateDnsZoneId string = deployPrivateDns ? cosmosDbPrivateDns.id : ''
