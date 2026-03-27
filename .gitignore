@@ -90,6 +90,7 @@ Thumbs.db
 *.bicep.bak
 bicep-params.json.bak
 *.parameters.json.bak
+.azure/
 
 # CI/CD
 .gh-token

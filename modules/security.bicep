@@ -1,9 +1,9 @@
 /*
   Security Module - Key Vault
   
-  Naming Convention: {projectName}-spoke-kv
+  Naming Convention: {normalizedProjectName}spokekv{uniqueSuffix}
+  - Key Vault naming follows Azure constraints and includes 'spokekv' to indicate spoke placement
   - Key Vault is accessed via Private Endpoints in Spoke VNet
-  - Includes 'spoke' to indicate deployment in Spoke network
   - Environment managed through tags, not naming
   
   Note: Private DNS Zones are now centralized in the Hub (private-dns-zones module)
@@ -15,8 +15,6 @@ param keyVaultName string
 param projectName string
 param environment string
 param logAnalyticsWorkspaceId string = ''
-param hubVnetId string
-param spokeVnetId string
 
 // Common tags (environment in tags, not names)
 var commonTags = {
@@ -25,7 +23,7 @@ var commonTags = {
 }
 
 // Key Vault - RBAC enabled, deployer needs Key Vault Contributor role
-// Naming: {projectName}-spoke-kv (Key Vault accessed via Private Endpoint in Spoke)
+// Name is passed from main.bicep and includes spoke placement marker.
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
   name: keyVaultName
   location: location

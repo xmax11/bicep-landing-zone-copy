@@ -1,0 +1,165 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "305824692235773186"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string"
+    },
+    "projectName": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string"
+    },
+    "spoke1InfraSubnetId": {
+      "type": "string"
+    },
+    "spoke2InfraSubnetId": {
+      "type": "string"
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "azureuser"
+    },
+    "adminPassword": {
+      "type": "securestring"
+    },
+    "vmSize": {
+      "type": "string",
+      "defaultValue": "Standard_B2s"
+    }
+  },
+  "variables": {
+    "commonTags": {
+      "environment": "[parameters('environment')]",
+      "project": "[parameters('projectName')]"
+    },
+    "vmDefinitions": [
+      {
+        "vmName": "[format('{0}-spoke1-vm', parameters('projectName'))]",
+        "computerName": "spoke1vm",
+        "subnetId": "[parameters('spoke1InfraSubnetId')]"
+      },
+      {
+        "vmName": "[format('{0}-spoke2-vm', parameters('projectName'))]",
+        "computerName": "spoke2vm",
+        "subnetId": "[parameters('spoke2InfraSubnetId')]"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "copy": {
+        "name": "vmNics",
+        "count": "[length(variables('vmDefinitions'))]"
+      },
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2023-02-01",
+      "name": "[format('{0}-nic', variables('vmDefinitions')[copyIndex()].vmName)]",
+      "location": "[parameters('location')]",
+      "tags": "[union(variables('commonTags'), createObject('spoke', string(add(copyIndex(), 1))))]",
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('vmDefinitions')[copyIndex()].subnetId]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "copy": {
+        "name": "windowsVms",
+        "count": "[length(variables('vmDefinitions'))]"
+      },
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('vmDefinitions')[copyIndex()].vmName]",
+      "location": "[parameters('location')]",
+      "tags": "[union(variables('commonTags'), createObject('spoke', string(add(copyIndex(), 1)), 'workloadType', 'iaas-demo'))]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "2022-datacenter-g2",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "Standard_LRS"
+            }
+          }
+        },
+        "osProfile": {
+          "computerName": "[variables('vmDefinitions')[copyIndex()].computerName]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "windowsConfiguration": {
+            "enableAutomaticUpdates": true
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', variables('vmDefinitions')[copyIndex()].vmName))]",
+              "properties": {
+                "primary": true
+              }
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', variables('vmDefinitions')[copyIndex()].vmName))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "vmIds": {
+      "type": "array",
+      "copy": {
+        "count": "[length(range(0, length(variables('vmDefinitions'))))]",
+        "input": "[resourceId('Microsoft.Compute/virtualMachines', variables('vmDefinitions')[range(0, length(variables('vmDefinitions')))[copyIndex()]].vmName)]"
+      }
+    },
+    "vmNames": {
+      "type": "array",
+      "copy": {
+        "count": "[length(range(0, length(variables('vmDefinitions'))))]",
+        "input": "[variables('vmDefinitions')[range(0, length(variables('vmDefinitions')))[copyIndex()]].vmName]"
+      }
+    },
+    "vmPrivateIps": {
+      "type": "array",
+      "copy": {
+        "count": "[length(range(0, length(variables('vmDefinitions'))))]",
+        "input": "[reference(resourceId('Microsoft.Network/networkInterfaces', format('{0}-nic', variables('vmDefinitions')[range(0, length(variables('vmDefinitions')))[copyIndex()]].vmName)), '2023-02-01').ipConfigurations[0].properties.privateIPAddress]"
+      }
+    }
+  }
+}

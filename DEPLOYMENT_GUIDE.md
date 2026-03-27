@@ -64,38 +64,53 @@ az account list -o table
 - [ ] Bicep CLI installed
 - [ ] Valid Azure subscription with sufficient permissions
 - [ ] Owner or Contributor role on subscription
+- [ ] Subscription ID or subscription name ready for `az account set --subscription ...`
 - [ ] Review and customize parameters.json
 - [ ] Note the alert email address: `Lolu@sinettechnologies.com`
 
 ---
 
-## Fast Track Deployment (5 minutes)
+## Fast Track Deployment (Beginner-Friendly, Specific Subscription)
 
-### Step 1: Authenticate
+### Step 1: Sign in to Azure
 ```bash
 az login
-# Select your subscription if prompted
 ```
 
-### Step 2: Deploy
+### Step 2: Pick the exact subscription
+```bash
+# List all subscriptions you can access
+az account list --output table
+
+# Set the one you want to deploy to (ID or Name both work)
+az account set --subscription "<YOUR_SUBSCRIPTION_ID_OR_NAME>"
+
+# Confirm current context
+az account show --query "{name:name, id:id, tenantId:tenantId}" --output table
+```
+
+### Step 3: Deploy with Azure CLI (explicit subscription)
 ```bash
 cd "c:\Users\Zahid\Downloads\Bicep landing zone - Copy"
 
-# Deploy with parameters.json
 az deployment sub create \
+  --subscription "<YOUR_SUBSCRIPTION_ID_OR_NAME>" \
   --name SinetLandingZoneDeployment \
   --location eastus \
   --template-file main.bicep \
   --parameters @parameters.json
 ```
 
-### Step 3: Verify
+### Step 4: Verify deployment
 ```bash
-# Get deployment status
-az deployment sub list -o table
-
-# View outputs
 az deployment sub show \
+  --subscription "<YOUR_SUBSCRIPTION_ID_OR_NAME>" \
+  --name SinetLandingZoneDeployment \
+  --query "{state:properties.provisioningState, timestamp:properties.timestamp}" \
+  --output table
+
+az deployment sub show \
+  --subscription "<YOUR_SUBSCRIPTION_ID_OR_NAME>" \
   --name SinetLandingZoneDeployment \
   --query properties.outputs
 ```
@@ -129,6 +144,8 @@ Get-AzDeployment -Name "SinetLandingZoneDeployment" | Select-Object Provisioning
 ---
 
 ## Customized Deployment
+
+> Tip: For all commands below, add `--subscription "<YOUR_SUBSCRIPTION_ID_OR_NAME>"` (or run `az account set --subscription "<ID_OR_NAME>"` first) to target a specific subscription.
 
 ### Deploy with Custom Project Name
 ```bash
@@ -363,10 +380,35 @@ az deployment sub create \
 
 ### Issue: Insufficient quota
 ```bash
-# Check current usage
-az vm list-usage --location eastus -o table
+# In this template, quota can come from App Service Plan SKU.
+# If Standard quota is 0, use Basic SKU override:
+az deployment sub create \
+  --name SinetLandingZoneDeployment \
+  --location <YOUR_LOCATION> \
+  --template-file main.bicep \
+  --parameters @parameters.json appServicePlanSkuName="B1" appServicePlanSkuTier="Basic" appServicePlanCapacity=1
 
-# Request quota increase in Azure Portal
+# If you only need network + security + VMs for now, skip App Service:
+az deployment sub create \
+  --name SinetLandingZoneDeployment \
+  --location <YOUR_LOCATION> \
+  --template-file main.bicep \
+  --parameters @parameters.json deploySpokeAppService=false
+
+# Also check VM quotas in region
+az vm list-usage --location <YOUR_LOCATION> -o table
+```
+
+### Issue: Key Vault name exists in deleted state
+```bash
+# List soft-deleted vaults
+az keyvault list-deleted -o table
+
+# Option A: Recover the deleted vault
+az keyvault recover --name <KEYVAULT_NAME>
+
+# Option B: Purge it, then redeploy with same name
+az keyvault purge --name <KEYVAULT_NAME> --location <YOUR_LOCATION>
 ```
 
 ### Issue: VNet peering fails

@@ -1,357 +1,209 @@
-# Azure Hub-and-Spoke Landing Zone - Bicep Deployment
+# Azure Hub-and-Dual-Spoke Landing Zone (Bicep)
 
 ## Overview
 
-This repository contains an **Azure Landing Zone** deployed using **Bicep** with a **Hub-and-Spoke** network topology. This architecture provides a secure, scalable foundation for Azure workloads with centralized network security and management.
+This repository deploys an Azure landing zone using a **Hub + 2 Spokes** topology with:
 
-### Components Deployed
+- Centralized **Hub VNet** security and transit
+- **One VM per spoke** (`Standard_B2ms`)
+- **One App Service** in spoke1 with private access
+- **Azure Bastion** in Hub for VM administration
+- **Private DNS + Private Endpoints** linked to Hub and both spokes
+- **Azure Policies enabled** by default
 
-| Component | Description |
-|-----------|-------------|
-| **Hub VNet** | Central network (10.100.0.0/16) containing Azure Firewall, Gateway, Bastion, DNS Resolver, and Management subnets |
-| **Spoke VNet** | Application network (10.200.0.0/16) with Infra, App, Data, and PaaS subnets |
-| **Azure Firewall** | Centralized network security with dynamically assigned private IP |
-| **Key Vault** | RBAC-enabled secrets management with private endpoint |
-| **Storage Account** | LRS storage with private endpoint for secure data access |
-| **Log Analytics** | Monitoring workspace for diagnostics and alerting |
-| **Private Endpoints** | Secure private access to Key Vault and Storage |
-| **Azure Policies** | Custom policies for TLS enforcement and tag compliance |
-| **VNet Peering** | Bi-directional peering between Hub and Spoke |
+## Deployed Architecture
 
-### Architecture Diagram
+| Component | Purpose |
+|---|---|
+| Hub VNet (`10.100.0.0/16`) | Central transit/security VNet |
+| Spoke1 VNet (`10.200.0.0/16`) | Workload VNet #1 (VM + App Service integration + PE targets) |
+| Spoke2 VNet (`10.210.0.0/16`) | Workload VNet #2 (VM) |
+| Azure Firewall (optional) | Hub transit and rule enforcement |
+| Azure Bastion | Secure VM access from Hub |
+| App Service (spoke1) | PaaS app integrated with spoke1 `AppSubnet` |
+| App Service Private Endpoint (spoke1) | Private inbound access from VNets |
+| Key Vault + Storage + Private Endpoints | Shared secured PaaS services |
+| Private DNS Zones | Linked to Hub + spoke1 + spoke2 |
+| Azure Policy Assignments | Tag inheritance + TLS guardrail |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Azure Subscription                        │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                     Hub VNet (10.100.0.0/16)              │  │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐│  │
-│  │  │AzureFirewall│ │ Gateway     │ │    Bastion          ││  │
-│  │  │  Subnet     │ │ Subnet      │ │    Subnet           ││  │
-│  │  │ Dynamic IP  │ │             │ │                     ││  │
-│  │  └─────────────┘ └─────────────┘ └─────────────────────┘│  │
-│  │  ┌─────────────┐ ┌─────────────┐                         │  │
-│  │  │ DNS Resolver│ │ Identity    │                         │  │
-│  │  │   Subnet    │ │   Subnet    │                         │  │
-│  │  └─────────────┘ └─────────────┘                         │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                              │                                   │
-│                         VNet Peering                             │
-│                              │                                   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                   Spoke VNet (10.200.0.0/16)             │  │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐│  │
-│  │  │   Infra     │ │    App      │ │      Data           ││  │
-│  │  │   Subnet    │ │   Subnet    │ │     Subnet          ││  │
-│  │  └─────────────┘ └─────────────┘ └─────────────────────┘│  │
-│  │  ┌─────────────────────────────────────────────────────┐ │  │
-│  │  │               PaaS Service Subnet                    │ │  │
-│  │  │     (Private Endpoints for Key Vault & Storage)     │ │  │
-│  │  └─────────────────────────────────────────────────────┘ │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌────────────────────────┐│
-│  │ Key Vault   │  │   Storage   │  │   Log Analytics        ││
-│  │ (RBAC)      │  │  Account    │  │   Workspace            ││
-│  └─────────────┘  └─────────────┘  └────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+## Topology
+
+```text
+Hub VNet (10.100.0.0/16)
+  - AzureFirewallSubnet
+  - AzureBastionSubnet
+  - IdentitySubnet
+  - ManagementSubnet
+
+Spoke1 VNet (10.200.0.0/16)
+  - InfraSubnet     -> VM (B2ms)
+  - AppSubnet       -> App Service VNet integration
+  - DataSubnet
+  - PaaSSvcSubnet   -> Private Endpoints (Storage, Key Vault, App Service)
+
+Spoke2 VNet (10.210.0.0/16)
+  - InfraSubnet     -> VM (B2ms)
+  - AppSubnet
+  - DataSubnet
+  - PaaSSvcSubnet
+
+Peering:
+  Hub <-> Spoke1
+  Hub <-> Spoke2
 ```
 
----
+## Routing and UDRs (Important)
 
-## Prerequisites
+### Hub UDRs
 
-Before deploying the landing zone, ensure you have the following:
+| Subnet | Route | Next Hop |
+|---|---|---|
+| IdentitySubnet | `10.200.0.0/16` (spoke1), `10.210.0.0/16` (spoke2) | Hub Firewall private IP |
+| ManagementSubnet | Same as above (unless bypass enabled) | Hub Firewall private IP |
 
-### 1. Azure Subscription
-- An active Azure subscription
-- Sufficient quota for the required resources
+### Spoke UDRs
 
-### 2. Azure CLI
-- Azure CLI version **2.50.0 or later** installed
-- Bicep CLI installed (`az bicep install`)
+When `deployFirewall = true`, each spoke subnet gets UDRs:
 
-### 3. Required Permissions
-- **Contributor** or **Owner** role on the subscription
-- Key Vault Contributor role (for deployment identity to access Key Vault)
+| Spoke | Route | Purpose |
+|---|---|---|
+| Spoke1 subnets | `10.210.0.0/16` -> Firewall | Force spoke1-to-spoke2 transit via Hub Firewall |
+| Spoke2 subnets | `10.200.0.0/16` -> Firewall | Force spoke2-to-spoke1 transit via Hub Firewall |
 
-### 4. Verify Prerequisites
+Optional default route:
 
-Run the following commands to verify your environment:
+- If `enableFirewallDefaultRoute = true`, each spoke subnet also gets `0.0.0.0/0 -> Firewall`.
+- If `false` (default), internet egress is **not** force tunneled.
+
+This meets the requirement to demonstrate hub transit between spokes without forcing all outbound traffic through firewall.
+
+### Cross-Spoke Connectivity (Hub-Spoke Transit)
+
+The architecture ensures full connectivity between spokes via the Hub:
+
+1. **VM to VM**: VMs in spoke1 InfraSubnet can reach VMs in spoke2 InfraSubnet (and vice versa) via the Hub Firewall using UDRs
+2. **VM to App Service**: VMs in either spoke can reach the App Service in spoke1 via Hub Firewall
+3. **Bastion Access**: Azure Bastion in Hub can access all VMs in both spokes via NSG rules allowing RDP (port 3389) from Hub VNet
+
+All cross-spoke traffic transits through the Hub VNet, enabling inspection and logging by the Azure Firewall.
+
+## Access Model
+
+### VM Access
+
+- One Windows VM is deployed in each spoke `InfraSubnet`.
+- Azure Bastion in Hub provides administrative access to both VMs.
+- NSG rules allow RDP (port 3389) from Hub VNet to both spoke InfraSubnets.
+
+### App Service Access
+
+- App Service is deployed in spoke1 and integrated to spoke1 `AppSubnet`.
+- A private endpoint for App Service is deployed in spoke1 `PaaSSvcSubnet`.
+- Private DNS zones are linked to Hub, spoke1, and spoke2, so both spokes can resolve/reach App Service privately.
+- Cross-spoke App Service access from spoke2 traverses Hub Firewall using spoke2 UDR to spoke1 CIDR.
+- NSG rules allow HTTP/HTTPS from Hub VNet and Spoke2 to spoke1 AppSubnet.
+- Bastion operators can validate App Service private access by connecting to either spoke VM through Bastion and testing the private endpoint hostname from that VM session.
+
+### Cross-Spoke Access via Hub VNet
+
+All traffic between spokes transits via the Hub VNet:
+
+| Source | Destination | Path |
+|---|---|---|
+| Spoke1 VM | Spoke2 VM | Spoke1 InfraSubnet -> Hub Firewall -> Spoke2 InfraSubnet |
+| Spoke2 VM | Spoke1 VM | Spoke2 InfraSubnet -> Hub Firewall -> Spoke1 InfraSubnet |
+| Spoke1 VM | App Service | Spoke1 -> Hub Firewall -> Spoke1 AppSubnet (direct via peering) |
+| Spoke2 VM | App Service | Spoke2 InfraSubnet -> Hub Firewall -> Spoke1 AppSubnet |
+| Bastion (Hub) | Spoke1 VM | Hub BastionSubnet -> Spoke1 InfraSubnet (via NSG rules) |
+| Bastion (Hub) | Spoke2 VM | Hub BastionSubnet -> Spoke2 InfraSubnet (via NSG rules) |
+
+### NSG Rules Summary
+
+The following NSG rules have been configured to enable the access model:
+
+| NSG | Rule | Source | Destination Port | Purpose |
+|---|---|---|---|---|
+| spoke1-infra-nsg | AllowRdpFromHub | Hub VNet (10.100.0.0/16) | 3389 | Bastion access to Spoke1 VM |
+| spoke2-infra-nsg | AllowRdpFromHub | Hub VNet (10.100.0.0/16) | 3389 | Bastion access to Spoke2 VM |
+| spoke1-app-nsg | AllowHttpFromHubAndSpokes | Hub VNet + Spoke2 | 80 | App Service HTTP access |
+| spoke1-app-nsg | AllowHttpsFromHubAndSpokes | Hub VNet + Spoke2 | 443 | App Service HTTPS access |
+| spoke2-app-nsg | AllowHttpFromHubAndSpoke1 | Hub VNet + Spoke1 | 80 | App Service HTTP access |
+| spoke2-app-nsg | AllowHttpsFromHubAndSpoke1 | Hub VNet + Spoke1 | 443 | App Service HTTPS access |
+| spoke1-data-nsg | AllowMssqlFromHubAndSpokes | Hub VNet + Spoke2 | 1433 | SQL/database access |
+| spoke2-data-nsg | AllowMssqlFromHubAndSpokes | Hub VNet + Spoke1 | 1433 | SQL/database access |
+| spoke1-paas-nsg | AllowHttpsFromHubAndSpokes | Hub VNet + Spoke2 | 443 | Private Endpoint access |
+| spoke2-paas-nsg | AllowHttpsFromHubAndSpokes | Hub VNet + Spoke1 | 443 | Private Endpoint access |
+
+## Firewall Rules
+
+The Azure Firewall policy includes:
+
+1. **Internal allow rule** for Hub + both spoke CIDRs (allows all traffic between Hub and spokes)
+2. **Azure DNS allow rule** (`168.63.129.16:53`)
+3. **Two OWASP-style demo application rules** (from both spoke CIDRs):
+   - `owasp.org` and `*.owasp.org` over HTTPS - for web application security resources
+   - `*.update.microsoft.com` and `*.download.windowsupdate.com` over HTTPS - for Azure update endpoints
+
+These demo app rules are intentionally limited to 2 rules for cost control while demonstrating OWASP-style rule configuration. The spoke VNets (10.200.0.0/16 and 10.210.0.0/16) are included as source addresses in these rules.
+
+> Note: Native OWASP managed rules are provided by WAF services (e.g., Application Gateway WAF / Front Door WAF), not Azure Firewall policy objects. Azure Firewall provides network and application-level filtering with custom rules.
+
+## Key Parameters (`parameters.json`)
+
+| Parameter | Recommended Value |
+|---|---|
+| `hubVnetAddressSpace` | `10.100.0.0/16` |
+| `spokeVnetAddressSpace` | `10.200.0.0/16` |
+| `spoke2VnetAddressSpace` | `10.210.0.0/16` |
+| `deployFirewall` | `true` |
+| `deployBastion` | `true` |
+| `enableFirewallDefaultRoute` | `false` |
+| `deploySpokeAppService` | `true` |
+| `deployWorkloadVms` | `true` |
+| `vmAdminPassword` | Set a strong secret before deployment |
+| `vmSku` | `Standard_B2ms` |
+| `deployAzurePolicies` | `true` |
+
+## Deploy
 
 ```bash
-# Check Azure CLI version
-az --version
-
-# Check Bicep installation
-az bicep version
-
-# Login to Azure
-az login
-
-# Set your subscription (replace with your subscription name or ID)
-az account set --subscription "Your-Subscription-Name"
-
-# Verify you're in the correct subscription
-az account show
-```
-
----
-
-## Parameters to Update
-
-Before deployment, you must update the following parameters in [`parameters.json`](parameters.json):
-
-### Required Parameters
-
-| Parameter | Description | Example Value |
-|-----------|-------------|---------------|
-| `projectName` | **UPDATE**: Name of your project (used for resource naming) | `myapp` |
-| `location` | **UPDATE**: Azure region | `eastus` |
-| `environment` | Environment name | `production` or `staging` |
-| `hubVnetAddressSpace` | **UPDATE**: CIDR for Hub VNet | `10.100.0.0/16` |
-| `spokeVnetAddressSpace` | **UPDATE**: CIDR for Spoke VNet | `10.200.0.0/16` |
-| `alertEmailAddress` | **UPDATE**: Email for monitoring alerts | `alerts@contoso.com` |
-
-### Optional Parameters
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `deployLogAnalytics` | Enable Log Analytics deployment | `true` |
-| `deployPrivateDns` | Enable Private DNS Zones | `true` |
-| `deployAzurePolicies` | Enable Azure Policies | `true` |
-| `nvaPrivateIp` | Static IP for NVA/firewall (leave empty for dynamic) | `""` (dynamic) |
-
----
-
-## Deployment Steps
-
-### Step 1: Prepare parameters.json
-
-Create or update the [`parameters.json`](parameters.json) file with your values. **Update the following highlighted values**:
-
-> **⚠️ IMPORTANT**: Replace the placeholder values marked with `<!-- UPDATE -->` with your specific configuration.
-
-```json
-{
-  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-  "contentVersion": "1.0.0.0",
-  "parameters": {
-    "location": {
-      "value": "eastus"  <!-- UPDATE: Your Azure region (e.g., eastus, westus2, uksouth) -->
-    },
-    "environment": {
-      "value": "production"  <!-- UPDATE: staging, production, or development -->
-    },
-    "projectName": {
-      "value": "myapp"  <!-- UPDATE: Your project name (used for resource naming) -->
-    },
-    "hubVnetAddressSpace": {
-      "value": "10.100.0.0/16"  <!-- UPDATE: Hub VNet CIDR block -->
-    },
-    "spokeVnetAddressSpace": {
-      "value": "10.200.0.0/16"  <!-- UPDATE: Spoke VNet CIDR block -->
-    },
-    "nvaPrivateIp": {
-      "value": ""  <!-- Optional: Leave empty for dynamic IP assignment -->
-    },
-    "deployLogAnalytics": {
-      "value": true  <!-- Set to false to skip Log Analytics -->
-    },
-    "deployPrivateDns": {
-      "value": true  <!-- Set to false to skip Private DNS Zones -->
-    },
-    "deployAzurePolicies": {
-      "value": true  <!-- Set to false to skip Policy deployment -->
-    },
-    "alertEmailAddress": {
-      "value": "alerts@contoso.com"  <!-- UPDATE: Your alert email address -->
-    }
-  }
-}
-```
-
-# Build the code if you made changes in parameters.json before deploying
-
-az bicep build --file main.bicep
-
-### Step 2: Run Deployment
-
-Deploy the landing zone using **subscription-level deployment**:
-
-```bash
-# Deploy using parameters.json
 az deployment sub create \
   --location eastus \
   --template-file main.bicep \
   --parameters @parameters.json
 ```
 
-> **Note**: The deployment location (`--location`) should match the `location` parameter in your `parameters.json`.
+## Expected Outputs
 
-### Step 3: Enable/Disable Optional Components
+You should see outputs for:
 
-To enable or disable optional components, modify the boolean parameters in `parameters.json`:
+- `hubVnetId`, `spoke1VnetId`, `spoke2VnetId`
+- `firewallPrivateIpAddress`
+- `bastionHostId`
+- `appServiceId`, `appServiceName`
+- `vmIds`, `vmNames`, `vmPrivateIps`
+- `spoke1InfraSubnetId`, `spoke2InfraSubnetId`
+- `storagePrivateEndpointId`, `keyVaultPrivateEndpointId`, `appServicePrivateEndpointId`
 
-#### Disable Log Analytics
-```json
-"deployLogAnalytics": {
-  "value": false
-}
+## Module Layout
+
+```text
+main.bicep
+parameters.json
+modules/
+  networking.bicep
+  compute.bicep
+  app-service.bicep
+  private-dns-zones.bicep
+  private-endpoints.bicep
+  security.bicep
+  storage.bicep
+  monitoring.bicep
+  policies.bicep
 ```
 
-#### Disable Private DNS Zones
-```json
-"deployPrivateDns": {
-  "value": false
-}
-```
+## Notes
 
-#### Disable Azure Policies
-```json
-"deployAzurePolicies": {
-  "value": false
-}
-```
-
----
-
-## Post-Deployment
-
-### Verify Outputs
-
-After a successful deployment, the following outputs will be displayed. **Verify these values**:
-
-```json
-{
-  "hubVnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-hub-vnet",
-  "spokeVnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-spoke-vnet",
-  "firewallPrivateIpAddress": "10.100.0.4",
-  "keyVaultId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.KeyVault/vaults/<kv-name>",
-  "storageAccountId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Storage/storageAccounts/<st-name>",
-  "storagePrivateEndpointId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/privateEndpoints/<st-pe-name>",
-  "keyVaultPrivateEndpointId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/privateEndpoints/<kv-pe-name>",
-  "resourceGroupName": "<projectName>-rg-<location>",
-  "resourceGroupId": "/subscriptions/<subscription-id>/resourceGroups/<projectName>-rg-<location>",
-  "paasSubnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-spoke-vnet/subnets/PaaS",
-  "appSubnetId": "/subscriptions/<subscription-id>/resourceGroups/<rg-name>/providers/Microsoft.Network/virtualNetworks/<projectName>-spoke-vnet/subnets/App"
-}
-```
-
-### Access Key Vault
-
-The deployment identity automatically gets access to Key Vault through RBAC. No manual access configuration is required.
-
-To access Key Vault:
-
-```bash
-# Get Key Vault details (replace with your resource group and key vault name)
-az keyvault show \
-  --name "<keyvault-name>" \
-  --resource-group "<resource-group-name>"
-
-# List secrets in Key Vault
-az keyvault secret list \
-  --vault-name "<keyvault-name>"
-```
-
-### Verify Firewall Private IP is Dynamically Assigned
-
-The Azure Firewall receives a **dynamic private IP** from the AzureFirewallSubnet. To verify:
-
-```bash
-# Get firewall private IP address
-az network firewall show \
-  --name "<projectName>-azure-fw" \
-  --resource-group "<projectName>-rg-<location>" \
-  --query "ipConfigurations[0].properties.privateIPAddress" \
-  --output tsv
-```
-
-> **Note**: The IP address is dynamically assigned and may change if the firewall is recreated.
-
----
-
-## Tips & Notes
-
-### Dynamic Resource Creation
-- All resources are dynamically named using `uniqueString()` based on the subscription ID, location, and project name
-- This ensures unique naming across deployments without conflicts
-- Azure Firewall automatically receives a dynamic private IP from the AzureFirewallSubnet
-
-### No Manual Key Vault Access Required
-- The deployment identity automatically receives **Key Vault Administrator** (or Contributor) access through RBAC
-- No need to manually add access policies or role assignments
-- Simply use `az keyvault` commands after deployment and your identity will have access
-
-### Keep Tags Intact for Policy Compliance
-All resources are automatically tagged with:
-
-| Tag | Value | Description |
-|-----|-------|-------------|
-| `environment` | From parameter | Production/staging/development |
-| `project` | From parameter | Your project name |
-| `managedBy` | `Bicep` | Indicates deployment method |
-
-> **⚠️ IMPORTANT**: Do not remove or modify these tags, as they ensure compliance with deployed Azure Policies.
-
-### Security Features
-- **Key Vault**: RBAC-enabled authorization (not access policies)
-- **Storage Account**: HTTPS-only, TLS 1.2 minimum enforced
-- **Private Endpoints**: All PaaS resources accessed via private links
-- **Firewall**: All traffic routed through central Azure Firewall
-- **VNet Peering**: Bi-directional peering for Hub-Spoke communication
-
----
-
-## File Structure
-
-```
-├── main.bicep                    # Main deployment template (subscription-level)
-├── parameters.json               # Deployment parameters (UPDATE THIS FILE)
-├── modules/
-│   ├── networking.bicep          # VNet, Firewall, NSGs, UDRs, Peering
-│   ├── security.bicep            # Key Vault, Private DNS Zones
-│   ├── storage.bicep             # Storage Account with diagnostics
-│   ├── monitoring.bicep          # Log Analytics, Action Groups, Alerts
-│   ├── private-endpoints.bicep   # Private Endpoints for KV & Storage
-│   └── policies.bicep            # Azure Policies (TLS, Tags)
-├── README.md                     # This file
-└── ARCHITECTURE.md               # Detailed architecture documentation
-```
-
----
-
-## Troubleshooting
-
-### Deployment Fails with "Cannot parse the request"
-- Ensure you're using the latest Bicep version: `az bicep install`
-- Check that VNet peering doesn't have tags (not supported by Azure)
-
-### Key Vault Access Issues
-- Ensure your deploying identity has Key Vault Contributor role or Owner on the subscription
-- Verify RBAC is enabled on Key Vault:
-  ```bash
-  az keyvault show --name <kv-name> --query "properties.enableRbacAuthorization"
-  ```
-
-### Policy Compliance Errors
-- Ensure all resources have `environment` and `project` tags
-- Tags are automatically applied by the Bicep templates - do not remove them
-
-### Subscription Scope Deployment Required
-- This template uses `targetScope = 'subscription'` and must be deployed at subscription level
-- Use `az deployment sub create` (not `az deployment group create`)
-
----
-
-## License
-
-MIT License - Feel free to use and modify for your needs.
-
----
-
-## Support
-
-For issues or questions, please review the [Azure Bicep documentation](https://docs.microsoft.com/en-us/azure/azure-resource-manager/bicep/) or open an issue in this repository.
+- Azure Policy deployment remains enabled and is not commented out.
+- If you disable `deployFirewall`, cross-spoke transit UDR behavior will not be active.
+- Update `vmAdminPassword` in `parameters.json` before production use.

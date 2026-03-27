@@ -1,0 +1,144 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "9437113511406535273"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string"
+    },
+    "projectName": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string"
+    },
+    "appSubnetId": {
+      "type": "string"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "appServicePlanSkuName": {
+      "type": "string",
+      "defaultValue": "B1",
+      "metadata": {
+        "description": "App Service Plan SKU name (for example: B1, S1, P1v3)"
+      }
+    },
+    "appServicePlanSkuTier": {
+      "type": "string",
+      "defaultValue": "Basic",
+      "metadata": {
+        "description": "App Service Plan SKU tier (for example: Basic, Standard, PremiumV3)"
+      }
+    },
+    "appServicePlanCapacity": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 1,
+      "metadata": {
+        "description": "Number of worker instances for the App Service Plan"
+      }
+    }
+  },
+  "variables": {
+    "uniqueSuffix": "[take(uniqueString(subscription().id, parameters('location'), parameters('projectName')), 8)]",
+    "appServicePlanName": "[take(format('{0}-spoke1-asp-{1}', parameters('projectName'), variables('uniqueSuffix')), 40)]",
+    "appServiceName": "[take(format('{0}-spoke1-app-{1}', parameters('projectName'), variables('uniqueSuffix')), 60)]",
+    "commonTags": {
+      "environment": "[parameters('environment')]",
+      "project": "[parameters('projectName')]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('appServicePlanName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('commonTags')]",
+      "sku": {
+        "name": "[parameters('appServicePlanSkuName')]",
+        "tier": "[parameters('appServicePlanSkuTier')]",
+        "capacity": "[parameters('appServicePlanCapacity')]"
+      },
+      "kind": "app"
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2022-09-01",
+      "name": "[variables('appServiceName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('commonTags')]",
+      "kind": "app",
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+        "httpsOnly": true,
+        "publicNetworkAccess": "Disabled",
+        "virtualNetworkSubnetId": "[parameters('appSubnetId')]",
+        "siteConfig": {
+          "minTlsVersion": "1.2",
+          "ftpsState": "Disabled",
+          "alwaysOn": true
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+      ]
+    },
+    {
+      "condition": "[not(equals(parameters('logAnalyticsWorkspaceId'), ''))]",
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[resourceId('Microsoft.Web/sites', variables('appServiceName'))]",
+      "name": "[format('{0}-spoke1-appsvc-diag', parameters('projectName'))]",
+      "properties": {
+        "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+        "logs": [
+          {
+            "categoryGroup": "allLogs",
+            "enabled": true
+          }
+        ],
+        "metrics": [
+          {
+            "category": "AllMetrics",
+            "enabled": true
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('appServiceName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "appServicePlanId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+    },
+    "appServicePlanName": {
+      "type": "string",
+      "value": "[variables('appServicePlanName')]"
+    },
+    "appServiceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Web/sites', variables('appServiceName'))]"
+    },
+    "appServiceName": {
+      "type": "string",
+      "value": "[variables('appServiceName')]"
+    },
+    "appServiceDefaultHostname": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Web/sites', variables('appServiceName')), '2022-09-01').defaultHostName]"
+    }
+  }
+}

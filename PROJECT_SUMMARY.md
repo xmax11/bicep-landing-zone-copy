@@ -269,7 +269,7 @@ The default alert email is configured as `Lolu@sinettechnologies.com`. Update th
 
 ### 3. Deploy Azure Bastion (Optional)
 - BastionSubnet is already configured
-- Deploy Azure Bastion resource to enable secure RDP/SSH access
+- Deploy Azure Bastion resource to enable secure RDP access
 
 ### 4. Configure Backup (Recommended)
 - Enable backup for Key Vault

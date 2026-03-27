@@ -3,19 +3,22 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": {
-      "value": "eastus"
+      "value": "eastus2"
     },
     "environment": {
       "value": "production"
     },
     "projectName": {
-      "value": "client-lz"
+      "value": "client-lz-004"
     },
     "hubVnetAddressSpace": {
       "value": "10.100.0.0/16"
     },
     "spokeVnetAddressSpace": {
       "value": "10.200.0.0/16"
+    },
+    "spoke2VnetAddressSpace": {
+      "value": "10.210.0.0/16"
     },
     "nvaPrivateIp": {
       "value": ""
@@ -30,7 +33,49 @@
       "value": "alerts@contoso.com"
     },
     "deployFirewall": {
+      "value": true
+    },
+    "deployBastion": {
+      "value": true
+    },
+    "enableFirewallDefaultRoute": {
       "value": false
+    },
+    "bypassFirewallForManagement": {
+      "value": true
+    },
+    "firewallThreatIntelMode": {
+      "value": "Deny"
+    },
+    "allowedFirewallEgressCidrs": {
+      "value": []
+    },
+    "deploySpokeAppService": {
+      "value": false
+    },
+    "appServicePlanSkuName": {
+      "value": "B1"
+    },
+    "appServicePlanSkuTier": {
+      "value": "Basic"
+    },
+    "appServicePlanCapacity": {
+      "value": 1
+    },
+    "deployWorkloadVms": {
+      "value": true
+    },
+    "deployHubTestVm": {
+      "value": true
+    },
+    "vmAdminUsername": {
+      "value": "azureuser"
+    },
+    "vmAdminPassword": {
+      "value": "ChangeM3Now!234567890"
+    },
+    "vmSku": {
+      "value": "Standard_D2s_v3"
     }
   }
 }

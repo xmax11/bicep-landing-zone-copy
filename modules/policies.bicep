@@ -1,8 +1,5 @@
 targetScope = 'subscription'
 
-param projectName string
-param environment string
-
 // Define the IDs as variables for clarity
 var inheritTagId = '/providers/Microsoft.Authorization/policyDefinitions/cd3aa116-8875-446f-a212-051a4c79a6b0'
 var storageTlsId = '/providers/Microsoft.Authorization/policyDefinitions/a8a5e003-8820-432a-bc93-a97920199d25'

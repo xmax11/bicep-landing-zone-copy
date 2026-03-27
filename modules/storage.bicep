@@ -1,9 +1,9 @@
 /*
   Storage Module - Storage Account
   
-  Naming Convention: {projectName}-spoke-st
+  Naming Convention: {normalizedProjectName}spokest{uniqueSuffix}
+  - Storage account naming follows Azure constraints and includes 'spokest' to indicate spoke placement
   - Storage Account is accessed via Private Endpoints in Spoke VNet
-  - Includes 'spoke' to indicate deployment in Spoke network
   - Environment managed through tags, not naming
   
   Deploys:
@@ -24,7 +24,7 @@ var commonTags = {
 }
 
 // Storage Account
-// Naming: {projectName}-spoke-st
+// Name is passed from main.bicep and includes spoke placement marker.
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: storageAccountName
   location: location
