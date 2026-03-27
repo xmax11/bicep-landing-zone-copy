@@ -41,6 +41,9 @@ param deployFirewall bool = false
 @description('Deploy Azure Bastion host in hub')
 param deployBastion bool = true
 
+@description('Deploy Azure DNS Private Resolver in Hub and configure spoke VNets to use it')
+param deployPrivateDnsResolver bool = true
+
 @description('Force all outbound spoke traffic (0.0.0.0/0) through the hub firewall')
 param enableFirewallDefaultRoute bool = false
 
@@ -121,6 +124,7 @@ module networking 'modules/networking.bicep' = {
     nvaPrivateIp: nvaPrivateIp
     deployFirewall: deployFirewall
     deployBastion: deployBastion
+    deployPrivateDnsResolver: deployPrivateDnsResolver
     enableFirewallDefaultRoute: enableFirewallDefaultRoute
     bypassFirewallForManagement: bypassFirewallForManagement
     firewallThreatIntelMode: firewallThreatIntelMode
@@ -224,8 +228,6 @@ module privateDnsZones 'modules/private-dns-zones.bicep' = {
     projectName: projectName
     environment: environment
     hubVnetId: networking.outputs.hubVnetId
-    spokeVnetId: networking.outputs.spoke1VnetId
-    secondarySpokeVnetId: networking.outputs.spoke2VnetId
     deployAppService: deploySpokeAppService
   }
 }
@@ -265,6 +267,8 @@ output spoke1VnetId string = networking.outputs.spoke1VnetId
 output spoke2VnetId string = networking.outputs.spoke2VnetId
 output firewallPrivateIpAddress string = deployFirewall ? networking.outputs.firewallPrivateIpAddress : ''
 output bastionHostId string = deployBastion ? networking.outputs.bastionHostId : ''
+output privateDnsResolverId string = deployPrivateDnsResolver ? networking.outputs.privateDnsResolverId : ''
+output privateDnsResolverInboundEndpointIp string = deployPrivateDnsResolver ? networking.outputs.privateDnsResolverInboundEndpointIp : ''
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspaceId
 output keyVaultId string = security.outputs.keyVaultId
 output keyVaultName string = security.outputs.keyVaultName

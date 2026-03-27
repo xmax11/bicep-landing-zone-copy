@@ -16,6 +16,8 @@ param logAnalyticsWorkspaceId string = ''
 param deployFirewall bool = false
 @description('Deploy Azure Bastion host in the hub VNet')
 param deployBastion bool = true
+@description('Deploy Azure DNS Private Resolver and configure spoke VNets to use Hub DNS')
+param deployPrivateDnsResolver bool = true
 @description('Force all outbound spoke traffic (0.0.0.0/0) through the hub firewall')
 param enableFirewallDefaultRoute bool = false
 @description('Bypass firewall for ManagementSubnet to keep management and private link access direct')
@@ -40,6 +42,8 @@ var hubFirewallSubnetPrefix = cidrSubnet(hubVnetAddressSpace, 24, 0)
 var hubBastionSubnetPrefix = cidrSubnet(hubVnetAddressSpace, 26, 8)
 var hubIdentitySubnetPrefix = cidrSubnet(hubVnetAddressSpace, 26, 10)
 var hubManagementSubnetPrefix = cidrSubnet(hubVnetAddressSpace, 24, 3)
+var hubPrivateDnsResolverSubnetPrefix = cidrSubnet(hubVnetAddressSpace, 28, 16)
+var dnsResolverInboundEndpointIp = cidrHost(hubPrivateDnsResolverSubnetPrefix, 4)
 
 // Spoke 1 subnet CIDRs
 var spoke1InfraSubnetPrefix = cidrSubnet(spokeVnetAddressSpace, 24, 0)
@@ -752,44 +756,54 @@ resource hubVnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
         hubVnetAddressSpace
       ]
     }
-    subnets: [
-      {
-        name: 'AzureFirewallSubnet'
-        properties: {
-          addressPrefix: hubFirewallSubnetPrefix
-        }
-      }
-      {
-        name: 'AzureBastionSubnet'
-        properties: {
-          addressPrefix: hubBastionSubnetPrefix
-        }
-      }
-      {
-        name: 'IdentitySubnet'
-        properties: {
-          addressPrefix: hubIdentitySubnetPrefix
-          networkSecurityGroup: {
-            id: identityNsg.id
+    subnets: concat(
+      [
+        {
+          name: 'AzureFirewallSubnet'
+          properties: {
+            addressPrefix: hubFirewallSubnetPrefix
           }
-          routeTable: deployFirewall ? {
-            id: identityUdr.id
-          } : null
         }
-      }
-      {
-        name: 'ManagementSubnet'
-        properties: {
-          addressPrefix: hubManagementSubnetPrefix
-          networkSecurityGroup: {
-            id: hubManagementNsg.id
+        {
+          name: 'AzureBastionSubnet'
+          properties: {
+            addressPrefix: hubBastionSubnetPrefix
           }
-          routeTable: deployFirewall && !bypassFirewallForManagement ? {
-            id: managementUdr.id
-          } : null
         }
-      }
-    ]
+        {
+          name: 'IdentitySubnet'
+          properties: {
+            addressPrefix: hubIdentitySubnetPrefix
+            networkSecurityGroup: {
+              id: identityNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: identityUdr.id
+            } : null
+          }
+        }
+        {
+          name: 'ManagementSubnet'
+          properties: {
+            addressPrefix: hubManagementSubnetPrefix
+            networkSecurityGroup: {
+              id: hubManagementNsg.id
+            }
+            routeTable: deployFirewall && !bypassFirewallForManagement ? {
+              id: managementUdr.id
+            } : null
+          }
+        }
+      ],
+      deployPrivateDnsResolver ? [
+        {
+          name: 'PrivateDnsResolverSubnet'
+          properties: {
+            addressPrefix: hubPrivateDnsResolverSubnetPrefix
+          }
+        }
+      ] : []
+    )
   }
 }
 
@@ -825,6 +839,36 @@ resource bastionHost 'Microsoft.Network/bastionHosts@2023-09-01' = if (deployBas
           publicIPAddress: {
             id: bastionPip.id
           }
+        }
+      }
+    ]
+  }
+}
+
+// ====== Azure DNS Private Resolver ======
+resource privateDnsResolver 'Microsoft.Network/dnsResolvers@2022-07-01' = if (deployPrivateDnsResolver) {
+  name: '${projectName}-hub-dns-resolver'
+  location: location
+  tags: commonTags
+  properties: {
+    virtualNetwork: {
+      id: hubVnet.id
+    }
+  }
+}
+
+resource privateDnsResolverInboundEndpoint 'Microsoft.Network/dnsResolvers/inboundEndpoints@2022-07-01' = if (deployPrivateDnsResolver) {
+  parent: privateDnsResolver
+  name: '${projectName}-hub-dns-inbound'
+  location: location
+  tags: commonTags
+  properties: {
+    ipConfigurations: [
+      {
+        privateIpAllocationMethod: 'Static'
+        privateIpAddress: dnsResolverInboundEndpointIp
+        subnet: {
+          id: '${hubVnet.id}/subnets/PrivateDnsResolverSubnet'
         }
       }
     ]
@@ -1047,71 +1091,80 @@ resource spoke1Vnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
     role: 'spoke'
     spoke: '1'
   })
-  properties: {
-    addressSpace: {
-      addressPrefixes: [
-        spokeVnetAddressSpace
-      ]
-    }
-    subnets: [
-      {
-        name: 'InfraSubnet'
-        properties: {
-          addressPrefix: spoke1InfraSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke1InfraNsg.id
-          }
-          routeTable: deployFirewall ? {
-            id: spoke1InfraUdr.id
-          } : null
-        }
+  properties: union(
+    {
+      addressSpace: {
+        addressPrefixes: [
+          spokeVnetAddressSpace
+        ]
       }
-      {
-        name: 'AppSubnet'
-        properties: {
-          addressPrefix: spoke1AppSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke1AppNsg.id
-          }
-          routeTable: deployFirewall ? {
-            id: spoke1AppUdr.id
-          } : null
-          delegations: [
-            {
-              name: 'appsvc-delegation'
-              properties: {
-                serviceName: 'Microsoft.Web/serverFarms'
-              }
+      subnets: [
+        {
+          name: 'InfraSubnet'
+          properties: {
+            addressPrefix: spoke1InfraSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke1InfraNsg.id
             }
-          ]
-        }
-      }
-      {
-        name: 'DataSubnet'
-        properties: {
-          addressPrefix: spoke1DataSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke1DataNsg.id
+            routeTable: deployFirewall ? {
+              id: spoke1InfraUdr.id
+            } : null
           }
-          routeTable: deployFirewall ? {
-            id: spoke1DataUdr.id
-          } : null
         }
-      }
-      {
-        name: 'PaaSSvcSubnet'
-        properties: {
-          addressPrefix: spoke1PaasSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke1PaasNsg.id
+        {
+          name: 'AppSubnet'
+          properties: {
+            addressPrefix: spoke1AppSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke1AppNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: spoke1AppUdr.id
+            } : null
+            delegations: [
+              {
+                name: 'appsvc-delegation'
+                properties: {
+                  serviceName: 'Microsoft.Web/serverFarms'
+                }
+              }
+            ]
           }
-          routeTable: deployFirewall ? {
-            id: spoke1PaasUdr.id
-          } : null
         }
+        {
+          name: 'DataSubnet'
+          properties: {
+            addressPrefix: spoke1DataSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke1DataNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: spoke1DataUdr.id
+            } : null
+          }
+        }
+        {
+          name: 'PaaSSvcSubnet'
+          properties: {
+            addressPrefix: spoke1PaasSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke1PaasNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: spoke1PaasUdr.id
+            } : null
+          }
+        }
+      ]
+    },
+    deployPrivateDnsResolver ? {
+      dhcpOptions: {
+        dnsServers: [
+          dnsResolverInboundEndpointIp
+        ]
       }
-    ]
-  }
+    } : {}
+  )
 }
 
 // ====== Spoke 2 VNet ======
@@ -1122,63 +1175,72 @@ resource spoke2Vnet 'Microsoft.Network/virtualNetworks@2023-02-01' = {
     role: 'spoke'
     spoke: '2'
   })
-  properties: {
-    addressSpace: {
-      addressPrefixes: [
-        spoke2VnetAddressSpace
+  properties: union(
+    {
+      addressSpace: {
+        addressPrefixes: [
+          spoke2VnetAddressSpace
+        ]
+      }
+      subnets: [
+        {
+          name: 'InfraSubnet'
+          properties: {
+            addressPrefix: spoke2InfraSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke2InfraNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: spoke2InfraUdr.id
+            } : null
+          }
+        }
+        {
+          name: 'AppSubnet'
+          properties: {
+            addressPrefix: spoke2AppSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke2AppNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: spoke2AppUdr.id
+            } : null
+          }
+        }
+        {
+          name: 'DataSubnet'
+          properties: {
+            addressPrefix: spoke2DataSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke2DataNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: spoke2DataUdr.id
+            } : null
+          }
+        }
+        {
+          name: 'PaaSSvcSubnet'
+          properties: {
+            addressPrefix: spoke2PaasSubnetPrefix
+            networkSecurityGroup: {
+              id: spoke2PaasNsg.id
+            }
+            routeTable: deployFirewall ? {
+              id: spoke2PaasUdr.id
+            } : null
+          }
+        }
       ]
-    }
-    subnets: [
-      {
-        name: 'InfraSubnet'
-        properties: {
-          addressPrefix: spoke2InfraSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke2InfraNsg.id
-          }
-          routeTable: deployFirewall ? {
-            id: spoke2InfraUdr.id
-          } : null
-        }
+    },
+    deployPrivateDnsResolver ? {
+      dhcpOptions: {
+        dnsServers: [
+          dnsResolverInboundEndpointIp
+        ]
       }
-      {
-        name: 'AppSubnet'
-        properties: {
-          addressPrefix: spoke2AppSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke2AppNsg.id
-          }
-          routeTable: deployFirewall ? {
-            id: spoke2AppUdr.id
-          } : null
-        }
-      }
-      {
-        name: 'DataSubnet'
-        properties: {
-          addressPrefix: spoke2DataSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke2DataNsg.id
-          }
-          routeTable: deployFirewall ? {
-            id: spoke2DataUdr.id
-          } : null
-        }
-      }
-      {
-        name: 'PaaSSvcSubnet'
-        properties: {
-          addressPrefix: spoke2PaasSubnetPrefix
-          networkSecurityGroup: {
-            id: spoke2PaasNsg.id
-          }
-          routeTable: deployFirewall ? {
-            id: spoke2PaasUdr.id
-          } : null
-        }
-      }
-    ]
-  }
+    } : {}
+  )
 }
 
 // ====== Hub <-> Spoke 1 Peering ======
@@ -1247,6 +1309,8 @@ output spoke2VnetId string = spoke2Vnet.id
 output firewallId string = deployFirewall ? azureFirewall.id : ''
 output firewallPrivateIpAddress string = deployFirewall ? azureFirewall!.properties.ipConfigurations[0].properties.privateIPAddress : ''
 output bastionHostId string = deployBastion ? bastionHost!.id : ''
+output privateDnsResolverId string = deployPrivateDnsResolver ? privateDnsResolver!.id : ''
+output privateDnsResolverInboundEndpointIp string = deployPrivateDnsResolver ? dnsResolverInboundEndpointIp : ''
 
 output infraAsgId string = infraAsg.id
 output appAsgId string = appAsg.id

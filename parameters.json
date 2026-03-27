@@ -9,7 +9,7 @@
       "value": "production"
     },
     "projectName": {
-      "value": "client-lz-004"
+      "value": "client-lz-005"
     },
     "hubVnetAddressSpace": {
       "value": "10.100.0.0/16"
@@ -36,6 +36,9 @@
       "value": true
     },
     "deployBastion": {
+      "value": true
+    },
+    "deployPrivateDnsResolver": {
       "value": true
     },
     "enableFirewallDefaultRoute": {

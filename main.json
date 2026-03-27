@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "2925992427333495709"
+      "templateHash": "11392358572271081325"
     }
   },
   "parameters": {
@@ -91,6 +91,13 @@
       "defaultValue": true,
       "metadata": {
         "description": "Deploy Azure Bastion host in hub"
+      }
+    },
+    "deployPrivateDnsResolver": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy Azure DNS Private Resolver in Hub and configure spoke VNets to use it"
       }
     },
     "enableFirewallDefaultRoute": {
@@ -248,6 +255,9 @@
           "deployBastion": {
             "value": "[parameters('deployBastion')]"
           },
+          "deployPrivateDnsResolver": {
+            "value": "[parameters('deployPrivateDnsResolver')]"
+          },
           "enableFirewallDefaultRoute": {
             "value": "[parameters('enableFirewallDefaultRoute')]"
           },
@@ -269,7 +279,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "12158086565802361780"
+              "templateHash": "18346710275532954596"
             }
           },
           "parameters": {
@@ -322,6 +332,13 @@
                 "description": "Deploy Azure Bastion host in the hub VNet"
               }
             },
+            "deployPrivateDnsResolver": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Deploy Azure DNS Private Resolver and configure spoke VNets to use Hub DNS"
+              }
+            },
             "enableFirewallDefaultRoute": {
               "type": "bool",
               "defaultValue": false,
@@ -365,6 +382,8 @@
             "hubBastionSubnetPrefix": "[cidrSubnet(parameters('hubVnetAddressSpace'), 26, 8)]",
             "hubIdentitySubnetPrefix": "[cidrSubnet(parameters('hubVnetAddressSpace'), 26, 10)]",
             "hubManagementSubnetPrefix": "[cidrSubnet(parameters('hubVnetAddressSpace'), 24, 3)]",
+            "hubPrivateDnsResolverSubnetPrefix": "[cidrSubnet(parameters('hubVnetAddressSpace'), 28, 16)]",
+            "dnsResolverInboundEndpointIp": "[cidrHost(variables('hubPrivateDnsResolverSubnetPrefix'), 4)]",
             "spoke1InfraSubnetPrefix": "[cidrSubnet(parameters('spokeVnetAddressSpace'), 24, 0)]",
             "spoke1AppSubnetPrefix": "[cidrSubnet(parameters('spokeVnetAddressSpace'), 24, 1)]",
             "spoke1DataSubnetPrefix": "[cidrSubnet(parameters('spokeVnetAddressSpace'), 24, 2)]",
@@ -889,40 +908,7 @@
                     "[parameters('hubVnetAddressSpace')]"
                   ]
                 },
-                "subnets": [
-                  {
-                    "name": "AzureFirewallSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('hubFirewallSubnetPrefix')]"
-                    }
-                  },
-                  {
-                    "name": "AzureBastionSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('hubBastionSubnetPrefix')]"
-                    }
-                  },
-                  {
-                    "name": "IdentitySubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('hubIdentitySubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-hub-nsg-identity', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-hub-udr-identity', parameters('projectName')))), null())]"
-                    }
-                  },
-                  {
-                    "name": "ManagementSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('hubManagementSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-hub-nsg-management', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(and(parameters('deployFirewall'), not(parameters('bypassFirewallForManagement'))), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-hub-udr-management', parameters('projectName')))), null())]"
-                    }
-                  }
-                ]
+                "subnets": "[concat(createArray(createObject('name', 'AzureFirewallSubnet', 'properties', createObject('addressPrefix', variables('hubFirewallSubnetPrefix'))), createObject('name', 'AzureBastionSubnet', 'properties', createObject('addressPrefix', variables('hubBastionSubnetPrefix'))), createObject('name', 'IdentitySubnet', 'properties', createObject('addressPrefix', variables('hubIdentitySubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-hub-nsg-identity', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-hub-udr-identity', parameters('projectName')))), null()))), createObject('name', 'ManagementSubnet', 'properties', createObject('addressPrefix', variables('hubManagementSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-hub-nsg-management', parameters('projectName')))), 'routeTable', if(and(parameters('deployFirewall'), not(parameters('bypassFirewallForManagement'))), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-hub-udr-management', parameters('projectName')))), null())))), if(parameters('deployPrivateDnsResolver'), createArray(createObject('name', 'PrivateDnsResolverSubnet', 'properties', createObject('addressPrefix', variables('hubPrivateDnsResolverSubnetPrefix')))), createArray()))]"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-hub-nsg-management', parameters('projectName')))]",
@@ -974,6 +960,45 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-hub-bastion-pip', parameters('projectName')))]",
                 "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-hub-vnet', parameters('projectName')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('deployPrivateDnsResolver')]",
+              "type": "Microsoft.Network/dnsResolvers",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}-hub-dns-resolver', parameters('projectName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('commonTags')]",
+              "properties": {
+                "virtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-hub-vnet', parameters('projectName')))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-hub-vnet', parameters('projectName')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('deployPrivateDnsResolver')]",
+              "type": "Microsoft.Network/dnsResolvers/inboundEndpoints",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}/{1}', format('{0}-hub-dns-resolver', parameters('projectName')), format('{0}-hub-dns-inbound', parameters('projectName')))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('commonTags')]",
+              "properties": {
+                "ipConfigurations": [
+                  {
+                    "privateIpAllocationMethod": "Static",
+                    "privateIpAddress": "[variables('dnsResolverInboundEndpointIp')]",
+                    "subnet": {
+                      "id": "[format('{0}/subnets/PrivateDnsResolverSubnet', resourceId('Microsoft.Network/virtualNetworks', format('{0}-hub-vnet', parameters('projectName'))))]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-hub-vnet', parameters('projectName')))]",
+                "[resourceId('Microsoft.Network/dnsResolvers', format('{0}-hub-dns-resolver', parameters('projectName')))]"
               ]
             },
             {
@@ -1084,63 +1109,7 @@
               "name": "[format('{0}-spoke1-vnet', parameters('projectName'))]",
               "location": "[parameters('location')]",
               "tags": "[union(variables('commonTags'), createObject('role', 'spoke', 'spoke', '1'))]",
-              "properties": {
-                "addressSpace": {
-                  "addressPrefixes": [
-                    "[parameters('spokeVnetAddressSpace')]"
-                  ]
-                },
-                "subnets": [
-                  {
-                    "name": "InfraSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke1InfraSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-infra-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-infra-udr', parameters('projectName')))), null())]"
-                    }
-                  },
-                  {
-                    "name": "AppSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke1AppSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-app-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-app-udr', parameters('projectName')))), null())]",
-                      "delegations": [
-                        {
-                          "name": "appsvc-delegation",
-                          "properties": {
-                            "serviceName": "Microsoft.Web/serverFarms"
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  {
-                    "name": "DataSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke1DataSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-data-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-data-udr', parameters('projectName')))), null())]"
-                    }
-                  },
-                  {
-                    "name": "PaaSSvcSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke1PaasSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-paas-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-paas-udr', parameters('projectName')))), null())]"
-                    }
-                  }
-                ]
-              },
+              "properties": "[union(createObject('addressSpace', createObject('addressPrefixes', createArray(parameters('spokeVnetAddressSpace'))), 'subnets', createArray(createObject('name', 'InfraSubnet', 'properties', createObject('addressPrefix', variables('spoke1InfraSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-infra-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-infra-udr', parameters('projectName')))), null()))), createObject('name', 'AppSubnet', 'properties', createObject('addressPrefix', variables('spoke1AppSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-app-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-app-udr', parameters('projectName')))), null()), 'delegations', createArray(createObject('name', 'appsvc-delegation', 'properties', createObject('serviceName', 'Microsoft.Web/serverFarms'))))), createObject('name', 'DataSubnet', 'properties', createObject('addressPrefix', variables('spoke1DataSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-data-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-data-udr', parameters('projectName')))), null()))), createObject('name', 'PaaSSvcSubnet', 'properties', createObject('addressPrefix', variables('spoke1PaasSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-paas-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-paas-udr', parameters('projectName')))), null()))))), if(parameters('deployPrivateDnsResolver'), createObject('dhcpOptions', createObject('dnsServers', createArray(variables('dnsResolverInboundEndpointIp')))), createObject()))]",
               "dependsOn": [
                 "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke1-app-nsg', parameters('projectName')))]",
                 "[resourceId('Microsoft.Network/routeTables', format('{0}-spoke1-app-udr', parameters('projectName')))]",
@@ -1158,55 +1127,7 @@
               "name": "[format('{0}-spoke2-vnet', parameters('projectName'))]",
               "location": "[parameters('location')]",
               "tags": "[union(variables('commonTags'), createObject('role', 'spoke', 'spoke', '2'))]",
-              "properties": {
-                "addressSpace": {
-                  "addressPrefixes": [
-                    "[parameters('spoke2VnetAddressSpace')]"
-                  ]
-                },
-                "subnets": [
-                  {
-                    "name": "InfraSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke2InfraSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-infra-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-infra-udr', parameters('projectName')))), null())]"
-                    }
-                  },
-                  {
-                    "name": "AppSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke2AppSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-app-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-app-udr', parameters('projectName')))), null())]"
-                    }
-                  },
-                  {
-                    "name": "DataSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke2DataSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-data-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-data-udr', parameters('projectName')))), null())]"
-                    }
-                  },
-                  {
-                    "name": "PaaSSvcSubnet",
-                    "properties": {
-                      "addressPrefix": "[variables('spoke2PaasSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-paas-nsg', parameters('projectName')))]"
-                      },
-                      "routeTable": "[if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-paas-udr', parameters('projectName')))), null())]"
-                    }
-                  }
-                ]
-              },
+              "properties": "[union(createObject('addressSpace', createObject('addressPrefixes', createArray(parameters('spoke2VnetAddressSpace'))), 'subnets', createArray(createObject('name', 'InfraSubnet', 'properties', createObject('addressPrefix', variables('spoke2InfraSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-infra-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-infra-udr', parameters('projectName')))), null()))), createObject('name', 'AppSubnet', 'properties', createObject('addressPrefix', variables('spoke2AppSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-app-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-app-udr', parameters('projectName')))), null()))), createObject('name', 'DataSubnet', 'properties', createObject('addressPrefix', variables('spoke2DataSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-data-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-data-udr', parameters('projectName')))), null()))), createObject('name', 'PaaSSvcSubnet', 'properties', createObject('addressPrefix', variables('spoke2PaasSubnetPrefix'), 'networkSecurityGroup', createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-paas-nsg', parameters('projectName')))), 'routeTable', if(parameters('deployFirewall'), createObject('id', resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-paas-udr', parameters('projectName')))), null()))))), if(parameters('deployPrivateDnsResolver'), createObject('dhcpOptions', createObject('dnsServers', createArray(variables('dnsResolverInboundEndpointIp')))), createObject()))]",
               "dependsOn": [
                 "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-spoke2-app-nsg', parameters('projectName')))]",
                 "[resourceId('Microsoft.Network/routeTables', format('{0}-spoke2-app-udr', parameters('projectName')))]",
@@ -1319,6 +1240,14 @@
             "bastionHostId": {
               "type": "string",
               "value": "[if(parameters('deployBastion'), resourceId('Microsoft.Network/bastionHosts', format('{0}-hub-bastion', parameters('projectName'))), '')]"
+            },
+            "privateDnsResolverId": {
+              "type": "string",
+              "value": "[if(parameters('deployPrivateDnsResolver'), resourceId('Microsoft.Network/dnsResolvers', format('{0}-hub-dns-resolver', parameters('projectName'))), '')]"
+            },
+            "privateDnsResolverInboundEndpointIp": {
+              "type": "string",
+              "value": "[if(parameters('deployPrivateDnsResolver'), variables('dnsResolverInboundEndpointIp'), '')]"
             },
             "infraAsgId": {
               "type": "string",
@@ -2390,12 +2319,6 @@
           "hubVnetId": {
             "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'hub-spoke-networking-deployment'), '2025-04-01').outputs.hubVnetId.value]"
           },
-          "spokeVnetId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'hub-spoke-networking-deployment'), '2025-04-01').outputs.spoke1VnetId.value]"
-          },
-          "secondarySpokeVnetId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'hub-spoke-networking-deployment'), '2025-04-01').outputs.spoke2VnetId.value]"
-          },
           "deployAppService": {
             "value": "[parameters('deploySpokeAppService')]"
           }
@@ -2407,7 +2330,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "2758644394444953080"
+              "templateHash": "18184389017893251745"
             }
           },
           "parameters": {
@@ -2436,19 +2359,6 @@
               "type": "string",
               "metadata": {
                 "description": "Hub VNet Resource ID"
-              }
-            },
-            "spokeVnetId": {
-              "type": "string",
-              "metadata": {
-                "description": "Spoke VNet Resource ID"
-              }
-            },
-            "secondarySpokeVnetId": {
-              "type": "string",
-              "defaultValue": "",
-              "metadata": {
-                "description": "Second Spoke VNet Resource ID (optional)"
               }
             },
             "deployAppService": {
@@ -2558,39 +2468,6 @@
             {
               "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
               "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.blob.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-storage-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.blob.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('secondarySpokeVnetId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.blob.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-storage-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.blob.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
               "name": "[format('{0}/{1}', 'privatelink.vaultcore.azure.net', format('{0}-hub-dns-keyvault-link-hub-vnet', parameters('projectName')))]",
               "location": "global",
               "tags": "[variables('commonTags')]",
@@ -2598,39 +2475,6 @@
                 "registrationEnabled": false,
                 "virtualNetwork": {
                   "id": "[parameters('hubVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net')]"
-              ]
-            },
-            {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.vaultcore.azure.net', format('{0}-hub-dns-keyvault-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net')]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('secondarySpokeVnetId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.vaultcore.azure.net', format('{0}-hub-dns-keyvault-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
                 }
               },
               "dependsOn": [
@@ -2654,39 +2498,6 @@
               ]
             },
             {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.{0}', variables('sqlDnsSuffix')), format('{0}-hub-dns-sql-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.{0}', variables('sqlDnsSuffix')))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('secondarySpokeVnetId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.{0}', variables('sqlDnsSuffix')), format('{0}-hub-dns-sql-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.{0}', variables('sqlDnsSuffix')))]"
-              ]
-            },
-            {
               "condition": "[parameters('deployAppService')]",
               "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
               "apiVersion": "2020-06-01",
@@ -2697,40 +2508,6 @@
                 "registrationEnabled": false,
                 "virtualNetwork": {
                   "id": "[parameters('hubVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.azurewebsites.net')]"
-              ]
-            },
-            {
-              "condition": "[parameters('deployAppService')]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.azurewebsites.net', format('{0}-hub-dns-appservice-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.azurewebsites.net')]"
-              ]
-            },
-            {
-              "condition": "[and(parameters('deployAppService'), not(empty(parameters('secondarySpokeVnetId'))))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.azurewebsites.net', format('{0}-hub-dns-appservice-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
                 }
               },
               "dependsOn": [
@@ -2756,39 +2533,6 @@
             {
               "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
               "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.documents.azure.com', format('{0}-hub-dns-cosmosdb-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com')]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('secondarySpokeVnetId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.documents.azure.com', format('{0}-hub-dns-cosmosdb-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com')]"
-              ]
-            },
-            {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
               "name": "[format('{0}/{1}', format('privatelink.file.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-file-link-hub-vnet', parameters('projectName')))]",
               "location": "global",
               "tags": "[variables('commonTags')]",
@@ -2796,39 +2540,6 @@
                 "registrationEnabled": false,
                 "virtualNetwork": {
                   "id": "[parameters('hubVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.file.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.file.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-file-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.file.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('secondarySpokeVnetId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.file.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-file-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
                 }
               },
               "dependsOn": [
@@ -2854,39 +2565,6 @@
             {
               "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
               "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.queue.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-queue-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.queue.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('secondarySpokeVnetId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.queue.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-queue-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.queue.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
               "name": "[format('{0}/{1}', format('privatelink.table.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-table-link-hub-vnet', parameters('projectName')))]",
               "location": "global",
               "tags": "[variables('commonTags')]",
@@ -2894,39 +2572,6 @@
                 "registrationEnabled": false,
                 "virtualNetwork": {
                   "id": "[parameters('hubVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.table.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.table.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-table-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', format('privatelink.table.{0}', variables('storageDnsSuffix')))]"
-              ]
-            },
-            {
-              "condition": "[not(empty(parameters('secondarySpokeVnetId')))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', format('privatelink.table.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-table-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
                 }
               },
               "dependsOn": [
@@ -2944,40 +2589,6 @@
                 "registrationEnabled": false,
                 "virtualNetwork": {
                   "id": "[parameters('hubVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.web.azurewebsites.net')]"
-              ]
-            },
-            {
-              "condition": "[parameters('deployAppService')]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.web.azurewebsites.net', format('{0}-hub-dns-web-link-spoke-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('spokeVnetId')]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.web.azurewebsites.net')]"
-              ]
-            },
-            {
-              "condition": "[and(parameters('deployAppService'), not(empty(parameters('secondarySpokeVnetId'))))]",
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', 'privatelink.web.azurewebsites.net', format('{0}-hub-dns-web-link-spoke2-vnet', parameters('projectName')))]",
-              "location": "global",
-              "tags": "[variables('commonTags')]",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[parameters('secondarySpokeVnetId')]"
                 }
               },
               "dependsOn": [
@@ -3040,7 +2651,7 @@
             },
             "dnsZoneSummary": {
               "type": "array",
-              "value": "[concat(createArray(createObject('dnsZoneName', format('privatelink.blob.{0}', variables('storageDnsSuffix')), 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', format('privatelink.blob.{0}', variables('storageDnsSuffix'))), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.blob.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-storage-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.blob.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-storage-link-spoke-vnet', parameters('projectName'))), 'spoke2LinkId', if(not(empty(parameters('secondarySpokeVnetId'))), resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.blob.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-storage-link-spoke2-vnet', parameters('projectName'))), '')), createObject('dnsZoneName', 'privatelink.vaultcore.azure.net', 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net'), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.vaultcore.azure.net', format('{0}-hub-dns-keyvault-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.vaultcore.azure.net', format('{0}-hub-dns-keyvault-link-spoke-vnet', parameters('projectName'))), 'spoke2LinkId', if(not(empty(parameters('secondarySpokeVnetId'))), resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.vaultcore.azure.net', format('{0}-hub-dns-keyvault-link-spoke2-vnet', parameters('projectName'))), '')), createObject('dnsZoneName', format('privatelink.{0}', variables('sqlDnsSuffix')), 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', format('privatelink.{0}', variables('sqlDnsSuffix'))), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.{0}', variables('sqlDnsSuffix')), format('{0}-hub-dns-sql-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.{0}', variables('sqlDnsSuffix')), format('{0}-hub-dns-sql-link-spoke-vnet', parameters('projectName'))), 'spoke2LinkId', if(not(empty(parameters('secondarySpokeVnetId'))), resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.{0}', variables('sqlDnsSuffix')), format('{0}-hub-dns-sql-link-spoke2-vnet', parameters('projectName'))), ''))), if(parameters('deployAppService'), createArray(createObject('dnsZoneName', 'privatelink.azurewebsites.net', 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', 'privatelink.azurewebsites.net'), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.azurewebsites.net', format('{0}-hub-dns-appservice-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.azurewebsites.net', format('{0}-hub-dns-appservice-link-spoke-vnet', parameters('projectName'))), 'spoke2LinkId', if(not(empty(parameters('secondarySpokeVnetId'))), resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.azurewebsites.net', format('{0}-hub-dns-appservice-link-spoke2-vnet', parameters('projectName'))), ''))), createArray()), createArray(createObject('dnsZoneName', 'privatelink.documents.azure.com', 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com'), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.documents.azure.com', format('{0}-hub-dns-cosmosdb-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.documents.azure.com', format('{0}-hub-dns-cosmosdb-link-spoke-vnet', parameters('projectName'))), 'spoke2LinkId', if(not(empty(parameters('secondarySpokeVnetId'))), resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.documents.azure.com', format('{0}-hub-dns-cosmosdb-link-spoke2-vnet', parameters('projectName'))), ''))))]"
+              "value": "[concat(createArray(createObject('dnsZoneName', format('privatelink.blob.{0}', variables('storageDnsSuffix')), 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', format('privatelink.blob.{0}', variables('storageDnsSuffix'))), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.blob.{0}', variables('storageDnsSuffix')), format('{0}-hub-dns-storage-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', '', 'spoke2LinkId', ''), createObject('dnsZoneName', 'privatelink.vaultcore.azure.net', 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net'), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.vaultcore.azure.net', format('{0}-hub-dns-keyvault-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', '', 'spoke2LinkId', ''), createObject('dnsZoneName', format('privatelink.{0}', variables('sqlDnsSuffix')), 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', format('privatelink.{0}', variables('sqlDnsSuffix'))), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', format('privatelink.{0}', variables('sqlDnsSuffix')), format('{0}-hub-dns-sql-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', '', 'spoke2LinkId', '')), if(parameters('deployAppService'), createArray(createObject('dnsZoneName', 'privatelink.azurewebsites.net', 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', 'privatelink.azurewebsites.net'), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.azurewebsites.net', format('{0}-hub-dns-appservice-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', '', 'spoke2LinkId', '')), createArray()), createArray(createObject('dnsZoneName', 'privatelink.documents.azure.com', 'dnsZoneId', resourceId('Microsoft.Network/privateDnsZones', 'privatelink.documents.azure.com'), 'placement', 'hub-vnet', 'hubVnetId', parameters('hubVnetId'), 'hubLinkId', resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', 'privatelink.documents.azure.com', format('{0}-hub-dns-cosmosdb-link-hub-vnet', parameters('projectName'))), 'spokeLinkId', '', 'spoke2LinkId', '')))]"
             }
           }
         }
@@ -3518,6 +3129,14 @@
     "bastionHostId": {
       "type": "string",
       "value": "[if(parameters('deployBastion'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'hub-spoke-networking-deployment'), '2025-04-01').outputs.bastionHostId.value, '')]"
+    },
+    "privateDnsResolverId": {
+      "type": "string",
+      "value": "[if(parameters('deployPrivateDnsResolver'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'hub-spoke-networking-deployment'), '2025-04-01').outputs.privateDnsResolverId.value, '')]"
+    },
+    "privateDnsResolverInboundEndpointIp": {
+      "type": "string",
+      "value": "[if(parameters('deployPrivateDnsResolver'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', 'hub-spoke-networking-deployment'), '2025-04-01').outputs.privateDnsResolverInboundEndpointIp.value, '')]"
     },
     "logAnalyticsWorkspaceId": {
       "type": "string",
