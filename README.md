@@ -139,10 +139,10 @@ az account show --query "{name:name,id:id,tenantId:tenantId}" -o table
 
 ```bash
 az deployment sub validate \
-  --name "${DEPLOYMENT_NAME}-validate" \
-  --location "$LOCATION" \
-  --template-file "$TEMPLATE_FILE" \
-  --parameters @"$PARAM_FILE"
+  --name "Clientlz" \
+  --location "eastus2" \
+  --template-file "main.bicep" \
+  --parameters @"parameters.json"
 ```
 
 Optional what-if preview:
